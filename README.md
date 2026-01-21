@@ -1,5 +1,8 @@
 # LeanEthereum Checkpoint Status Service
 
+[![CI](https://github.com/blockblaz/leanpoint/workflows/CI/badge.svg)](https://github.com/blockblaz/leanpoint/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A lightweight, fast Zig service that monitors finality across multiple Lean Ethereum beacon nodes with consensus validation. Inspired by [checkpointz](https://github.com/ethpandaops/checkpointz), leanpoint provides reliable checkpoint sync monitoring for the Lean Ethereum ecosystem.
 
 ## Table of Contents
@@ -955,8 +958,19 @@ Contributions welcome! Please:
 3. Make your changes with clear commit messages
 4. Add tests if applicable
 5. Ensure code compiles: `zig build`
-6. Format code: `zig fmt src/`
-7. Submit a pull request
+6. Run tests: `zig build test`
+7. Format code: `zig fmt src/`
+8. Submit a pull request
+
+### CI/CD
+
+The repository includes GitHub Actions CI that automatically:
+- Builds the project
+- Runs tests
+- Checks code formatting
+- Builds Docker image
+
+All pull requests must pass CI checks before merging.
 
 ### Development Setup
 
