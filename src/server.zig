@@ -212,3 +212,31 @@ fn guessContentType(path: []const u8) []const u8 {
     if (std.mem.eql(u8, ext, ".ico")) return "image/x-icon";
     return "application/octet-stream";
 }
+
+test "splitPath removes query string" {
+    try std.testing.expectEqualStrings("/status", splitPath("/status?foo=bar"));
+    try std.testing.expectEqualStrings("/metrics", splitPath("/metrics"));
+    try std.testing.expectEqualStrings("/", splitPath("/?query=value"));
+}
+
+test "guessContentType" {
+    try std.testing.expectEqualStrings("text/html", guessContentType("index.html"));
+    try std.testing.expectEqualStrings("application/javascript", guessContentType("script.js"));
+    try std.testing.expectEqualStrings("text/css", guessContentType("style.css"));
+    try std.testing.expectEqualStrings("application/json", guessContentType("data.json"));
+    try std.testing.expectEqualStrings("image/png", guessContentType("image.png"));
+    try std.testing.expectEqualStrings("image/svg+xml", guessContentType("icon.svg"));
+    try std.testing.expectEqualStrings("image/x-icon", guessContentType("favicon.ico"));
+    try std.testing.expectEqualStrings("application/octet-stream", guessContentType("file.bin"));
+    try std.testing.expectEqualStrings("application/octet-stream", guessContentType("no_extension"));
+}
+
+test "jsonString escapes special characters" {
+    const input = "test \"quoted\" string\nwith newline";
+    const output = try jsonString(std.testing.allocator, input);
+    defer std.testing.allocator.free(output);
+    
+    // Should be properly escaped JSON string
+    try std.testing.expect(std.mem.indexOf(u8, output, "\\\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "\\n") != null);
+}

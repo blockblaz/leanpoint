@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+.github
+
+# Zig build artifacts
+zig-cache
+.zig-cache
+zig-out
+
+# Documentation
+*.md
+
+# Configuration files (should be mounted at runtime)
+upstreams.json
+
+# Scripts
+*.sh
+*.py
+
+# Editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/

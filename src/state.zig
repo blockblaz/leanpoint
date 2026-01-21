@@ -80,3 +80,73 @@ pub const AppState = struct {
         };
     }
 };
+
+test "AppState updateSuccess" {
+    var state = AppState{};
+    defer state.deinit(std.testing.allocator);
+
+    state.updateSuccess(std.testing.allocator, 100, 99, 50, 1000);
+
+    try std.testing.expectEqual(@as(u64, 100), state.justified_slot);
+    try std.testing.expectEqual(@as(u64, 99), state.finalized_slot);
+    try std.testing.expectEqual(@as(i64, 1000), state.last_updated_ms);
+    try std.testing.expectEqual(@as(i64, 1000), state.last_success_ms);
+    try std.testing.expectEqual(@as(u64, 50), state.last_latency_ms);
+    try std.testing.expectEqual(@as(u64, 0), state.error_count);
+    try std.testing.expect(state.last_error == null);
+}
+
+test "AppState updateError" {
+    var state = AppState{};
+    defer state.deinit(std.testing.allocator);
+
+    state.updateError(std.testing.allocator, "test error", 2000);
+
+    try std.testing.expectEqual(@as(i64, 2000), state.last_updated_ms);
+    try std.testing.expectEqual(@as(u64, 1), state.error_count);
+    try std.testing.expect(state.last_error != null);
+    if (state.last_error) |msg| {
+        try std.testing.expectEqualStrings("test error", msg);
+    }
+}
+
+test "AppState snapshot" {
+    var state = AppState{};
+    defer state.deinit(std.testing.allocator);
+
+    state.updateSuccess(std.testing.allocator, 200, 199, 75, 3000);
+
+    var snapshot = try state.snapshot(std.testing.allocator);
+    defer snapshot.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u64, 200), snapshot.justified_slot);
+    try std.testing.expectEqual(@as(u64, 199), snapshot.finalized_slot);
+    try std.testing.expectEqual(@as(i64, 3000), snapshot.last_updated_ms);
+    try std.testing.expectEqual(@as(i64, 3000), snapshot.last_success_ms);
+    try std.testing.expectEqual(@as(u64, 75), snapshot.last_latency_ms);
+}
+
+test "AppState updateError clears previous error" {
+    var state = AppState{};
+    defer state.deinit(std.testing.allocator);
+
+    state.updateError(std.testing.allocator, "first error", 1000);
+    state.updateError(std.testing.allocator, "second error", 2000);
+
+    try std.testing.expectEqual(@as(u64, 2), state.error_count);
+    if (state.last_error) |msg| {
+        try std.testing.expectEqualStrings("second error", msg);
+    }
+}
+
+test "AppState updateSuccess clears error" {
+    var state = AppState{};
+    defer state.deinit(std.testing.allocator);
+
+    state.updateError(std.testing.allocator, "error message", 1000);
+    try std.testing.expectEqual(@as(u64, 1), state.error_count);
+
+    state.updateSuccess(std.testing.allocator, 100, 99, 50, 2000);
+    try std.testing.expect(state.last_error == null);
+    try std.testing.expectEqual(@as(u64, 1), state.error_count); // error_count persists
+}

@@ -1,4 +1,7 @@
-# Leanpoint Checkpoint Status Service
+# LeanEthereum Checkpoint Status Service
+
+[![CI](https://github.com/blockblaz/leanpoint/workflows/CI/badge.svg)](https://github.com/blockblaz/leanpoint/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A lightweight, fast Zig service that monitors finality across multiple Lean Ethereum beacon nodes with consensus validation. Inspired by [checkpointz](https://github.com/ethpandaops/checkpointz), leanpoint provides reliable checkpoint sync monitoring for the Lean Ethereum ecosystem.
 
@@ -638,24 +641,51 @@ curl -s http://localhost:5052/status | jq
 
 ### Docker Deployment
 
-**Dockerfile:**
-```dockerfile
-FROM alpine:latest
-RUN apk add --no-cache libc6-compat
-COPY zig-out/bin/leanpoint /usr/local/bin/
-COPY upstreams.json /etc/leanpoint/
-EXPOSE 5555
-CMD ["leanpoint", "--upstreams-config", "/etc/leanpoint/upstreams.json"]
+**Build the image:**
+```bash
+docker build -t leanpoint:latest .
 ```
 
-**Build and run:**
+**Run the container:**
 ```bash
-docker build -t leanpoint .
+# Create configuration first
+cp upstreams.example.json upstreams.json
+# Edit upstreams.json with your beacon node endpoints
+
+# Run container
 docker run -d \
   --name leanpoint \
+  --restart unless-stopped \
   -p 5555:5555 \
-  -v $(pwd)/upstreams.json:/etc/leanpoint/upstreams.json \
-  leanpoint
+  -v $(pwd)/upstreams.json:/etc/leanpoint/upstreams.json:ro \
+  leanpoint:latest \
+  leanpoint --upstreams-config /etc/leanpoint/upstreams.json
+```
+
+**Monitor:**
+```bash
+# View logs
+docker logs -f leanpoint
+
+# Check status
+curl http://localhost:5555/status
+curl http://localhost:5555/metrics
+```
+
+**Stop and cleanup:**
+```bash
+docker stop leanpoint
+docker rm leanpoint
+```
+
+**Multi-architecture builds:**
+```bash
+# Build for specific platform
+docker build --platform linux/amd64 -t leanpoint:amd64 .
+docker build --platform linux/arm64 -t leanpoint:arm64 .
+
+# Or use buildx for multi-arch
+docker buildx build --platform linux/amd64,linux/arm64 -t leanpoint:latest .
 ```
 
 ### Systemd Service
@@ -928,8 +958,19 @@ Contributions welcome! Please:
 3. Make your changes with clear commit messages
 4. Add tests if applicable
 5. Ensure code compiles: `zig build`
-6. Format code: `zig fmt src/`
-7. Submit a pull request
+6. Run tests: `zig build test`
+7. Format code: `zig fmt src/`
+8. Submit a pull request
+
+### CI/CD
+
+The repository includes GitHub Actions CI that automatically:
+- Builds the project
+- Runs tests
+- Checks code formatting
+- Builds Docker image
+
+All pull requests must pass CI checks before merging.
 
 ### Development Setup
 
