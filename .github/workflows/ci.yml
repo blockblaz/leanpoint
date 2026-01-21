@@ -18,10 +18,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Zig
-      uses: mlugg/setup-zig@v1
-      with:
-        version: 0.14.1
+    - name: Install Zig 0.14.1
+      run: |
+        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+        sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+        sudo ln -s /usr/local/zig-x86_64-linux-0.14.1/zig /usr/local/bin/zig
+        rm /tmp/zig.tar.xz
+        zig version
 
     - name: Cache Zig packages
       uses: actions/cache@v3
@@ -58,10 +61,19 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Zig
-      uses: mlugg/setup-zig@v1
-      with:
-        version: 0.14.1
+    - name: Install Zig 0.14.1
+      run: |
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+          sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+          sudo ln -s /usr/local/zig-x86_64-linux-0.14.1/zig /usr/local/bin/zig
+        else
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-macos-0.14.1.tar.xz"
+          sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+          sudo ln -s /usr/local/zig-x86_64-macos-0.14.1/zig /usr/local/bin/zig
+        fi
+        rm /tmp/zig.tar.xz
+        zig version
 
     - name: Cache Zig packages
       uses: actions/cache@v3
@@ -99,10 +111,19 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Zig
-      uses: mlugg/setup-zig@v1
-      with:
-        version: 0.14.1
+    - name: Install Zig 0.14.1
+      run: |
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+          sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+          sudo ln -s /usr/local/zig-x86_64-linux-0.14.1/zig /usr/local/bin/zig
+        else
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-macos-0.14.1.tar.xz"
+          sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+          sudo ln -s /usr/local/zig-x86_64-macos-0.14.1/zig /usr/local/bin/zig
+        fi
+        rm /tmp/zig.tar.xz
+        zig version
 
     - name: Cache Zig packages
       uses: actions/cache@v3
@@ -140,10 +161,13 @@ jobs:
       with:
         fetch-depth: 0  # Fetch full history to get git commit info
 
-    - name: Set up Zig
-      uses: mlugg/setup-zig@v1
-      with:
-        version: 0.14.1
+    - name: Install Zig 0.14.1
+      run: |
+        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+        sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+        sudo ln -s /usr/local/zig-x86_64-linux-0.14.1/zig /usr/local/bin/zig
+        rm /tmp/zig.tar.xz
+        zig version
 
     - name: Cache Zig packages
       uses: actions/cache@v3
