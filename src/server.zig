@@ -235,7 +235,7 @@ test "jsonString escapes special characters" {
     const input = "test \"quoted\" string\nwith newline";
     const output = try jsonString(std.testing.allocator, input);
     defer std.testing.allocator.free(output);
-    
+
     // Should be properly escaped JSON string
     try std.testing.expect(std.mem.indexOf(u8, output, "\\\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "\\n") != null);

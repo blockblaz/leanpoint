@@ -9,10 +9,12 @@ RUN apk add --no-cache \
     xz \
     bash
 
-# Install Zig
-ARG ZIG_VERSION=0.13.0
-RUN curl -L "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" | tar -xJ -C /usr/local && \
-    ln -s "/usr/local/zig-linux-x86_64-${ZIG_VERSION}/zig" /usr/local/bin/zig
+# Install Zig 0.14.1
+ARG ZIG_VERSION=0.14.1
+RUN curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" && \
+    tar -xJf /tmp/zig.tar.xz -C /usr/local && \
+    ln -s "/usr/local/zig-x86_64-linux-${ZIG_VERSION}/zig" /usr/local/bin/zig && \
+    rm /tmp/zig.tar.xz
 
 # Set working directory
 WORKDIR /build

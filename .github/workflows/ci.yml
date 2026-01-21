@@ -1,41 +1,184 @@
-name: CI
-
 on:
   push:
-    branches: [ main ]
+    branches: [main, feature]
   pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+
+# only one can run at a time in PRs
+concurrency:
+  # If PR, cancel prev commits. head_ref = source branch name on pull_request, null if push
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+name: CI
 
 jobs:
-  build:
-    name: Build and Test
+  lint:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Setup Zig
-      uses: goto-bus-stop/setup-zig@v2
+    - name: Install Zig 0.14.1
+      run: |
+        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+        sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+        sudo ln -s /usr/local/zig-x86_64-linux-0.14.1/zig /usr/local/bin/zig
+        rm /tmp/zig.tar.xz
+        zig version
+
+    - name: Cache Zig packages
+      uses: actions/cache@v3
       with:
-        version: 0.13.0
+        path: ~/.cache/zig
+        key: ${{ runner.os }}-zig-packages-${{ hashFiles('build.zig.zon') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-packages-
+
+    - name: Fetch Zig dependencies with retry
+      run: |
+        max_attempts=5
+        attempt=1
+        while [ $attempt -le $max_attempts ]; do
+          if zig build --fetch; then
+            echo "Successfully fetched dependencies on attempt $attempt"
+            exit 0
+          fi
+          echo "Attempt $attempt/$max_attempts failed, retrying in 5 seconds..."
+          sleep 5
+          attempt=$((attempt + 1))
+        done
+        echo "Failed to fetch dependencies after $max_attempts attempts"
+        exit 1
+
+    - name: Check formatting
+      run: zig fmt --check .
+
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Zig 0.14.1
+      run: |
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+          sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+          sudo ln -s /usr/local/zig-x86_64-linux-0.14.1/zig /usr/local/bin/zig
+        else
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-macos-0.14.1.tar.xz"
+          sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+          sudo ln -s /usr/local/zig-x86_64-macos-0.14.1/zig /usr/local/bin/zig
+        fi
+        rm /tmp/zig.tar.xz
+        zig version
+
+    - name: Cache Zig packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/zig
+        key: ${{ runner.os }}-zig-packages-${{ hashFiles('build.zig.zon') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-packages-
+
+    - name: Fetch Zig dependencies with retry
+      run: |
+        max_attempts=5
+        attempt=1
+        while [ $attempt -le $max_attempts ]; do
+          if zig build --fetch; then
+            echo "Successfully fetched dependencies on attempt $attempt"
+            exit 0
+          fi
+          echo "Attempt $attempt/$max_attempts failed, retrying in 5 seconds..."
+          sleep 5
+          attempt=$((attempt + 1))
+        done
+        echo "Failed to fetch dependencies after $max_attempts attempts"
+        exit 1
 
     - name: Build
       run: zig build
 
-    - name: Run tests
-      run: zig build test
-
-    - name: Check formatting
-      run: zig fmt --check src/
-
-  docker:
-    name: Docker Build
-    runs-on: ubuntu-latest
-    
+  test:
+    name: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+
+    - name: Install Zig 0.14.1
+      run: |
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+          sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+          sudo ln -s /usr/local/zig-x86_64-linux-0.14.1/zig /usr/local/bin/zig
+        else
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-macos-0.14.1.tar.xz"
+          sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+          sudo ln -s /usr/local/zig-x86_64-macos-0.14.1/zig /usr/local/bin/zig
+        fi
+        rm /tmp/zig.tar.xz
+        zig version
+
+    - name: Cache Zig packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/zig
+        key: ${{ runner.os }}-zig-packages-${{ hashFiles('build.zig.zon') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-packages-
+
+    - name: Fetch Zig dependencies with retry
+      run: |
+        max_attempts=5
+        attempt=1
+        while [ $attempt -le $max_attempts ]; do
+          if zig build --fetch; then
+            echo "Successfully fetched dependencies on attempt $attempt"
+            exit 0
+          fi
+          echo "Attempt $attempt/$max_attempts failed, retrying in 5 seconds..."
+          sleep 5
+          attempt=$((attempt + 1))
+        done
+        echo "Failed to fetch dependencies after $max_attempts attempts"
+        exit 1
+
+    - name: Run all tests
+      run: zig build test --summary all
+
+  docker-build:
+    name: docker-build
+    needs: [lint, build, test]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history to get git commit info
+
+    - name: Install Zig 0.14.1
+      run: |
+        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+        sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+        sudo ln -s /usr/local/zig-x86_64-linux-0.14.1/zig /usr/local/bin/zig
+        rm /tmp/zig.tar.xz
+        zig version
+
+    - name: Cache Zig packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/zig
+        key: ${{ runner.os }}-zig-packages-${{ hashFiles('build.zig.zon') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-packages-
+
+    - name: Build leanpoint natively
+      run: zig build -Doptimize=ReleaseFast
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -44,7 +187,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        push: false
-        tags: leanpoint:ci
+        push: false  # Don't push, just build to verify
+        tags: leanpoint:ci-${{ github.run_number }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
