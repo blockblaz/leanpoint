@@ -9,12 +9,14 @@ pub const Config = struct {
     request_timeout_ms: u64,
     stale_after_ms: u64,
     static_dir: ?[]const u8,
+    upstreams_config: ?[]const u8,
 
     pub fn deinit(self: *Config, allocator: std.mem.Allocator) void {
         allocator.free(self.bind_address);
         allocator.free(self.lean_api_base_url);
         allocator.free(self.lean_api_path);
         if (self.static_dir) |dir| allocator.free(dir);
+        if (self.upstreams_config) |cfg| allocator.free(cfg);
     }
 };
 
@@ -28,6 +30,7 @@ pub fn load(allocator: std.mem.Allocator) !Config {
     var request_timeout_ms: u64 = defaults.request_timeout_ms;
     var stale_after_ms: u64 = defaults.stale_after_ms;
     var static_dir: ?[]const u8 = null;
+    var upstreams_config: ?[]const u8 = null;
 
     if (try getEnvOwned(allocator, "LEANPOINT_BIND_ADDR")) |val| {
         allocator.free(bind_address);
@@ -59,6 +62,9 @@ pub fn load(allocator: std.mem.Allocator) !Config {
     }
     if (try getEnvOwned(allocator, "LEANPOINT_STATIC_DIR")) |val| {
         static_dir = val;
+    }
+    if (try getEnvOwned(allocator, "LEANPOINT_UPSTREAMS_CONFIG")) |val| {
+        upstreams_config = val;
     }
 
     var args = std.process.args();
@@ -95,6 +101,10 @@ pub fn load(allocator: std.mem.Allocator) !Config {
             const value = try needArg(&args, "--static-dir");
             if (static_dir) |dir| allocator.free(dir);
             static_dir = try allocator.dupe(u8, value);
+        } else if (std.mem.eql(u8, arg, "--upstreams-config")) {
+            const value = try needArg(&args, "--upstreams-config");
+            if (upstreams_config) |cfg| allocator.free(cfg);
+            upstreams_config = try allocator.dupe(u8, value);
         } else {
             std.debug.print("Unknown argument: {s}\n", .{arg});
             printUsage();
@@ -117,6 +127,7 @@ pub fn load(allocator: std.mem.Allocator) !Config {
         .request_timeout_ms = request_timeout_ms,
         .stale_after_ms = stale_after_ms,
         .static_dir = static_dir,
+        .upstreams_config = upstreams_config,
     };
 }
 
@@ -159,20 +170,25 @@ fn printUsage() void {
         \\  leanpoint [options]
         \\
         \\Options:
-        \\  --bind <addr>         Bind address (default 0.0.0.0)
-        \\  --port <port>         Bind port (default 5555)
-        \\  --lean-url <url>      LeanEthereum base URL
-        \\  --lean-path <path>    LeanEthereum path (default /status)
-        \\  --poll-ms <ms>        Poll interval in milliseconds
-        \\  --timeout-ms <ms>     Request timeout in milliseconds
-        \\  --stale-ms <ms>       Stale threshold in milliseconds
-        \\  --static-dir <dir>    Optional static frontend directory
-        \\  --help                Show this help
+        \\  --bind <addr>             Bind address (default 0.0.0.0)
+        \\  --port <port>             Bind port (default 5555)
+        \\  --lean-url <url>          LeanEthereum base URL (legacy single upstream)
+        \\  --lean-path <path>        LeanEthereum path (default /status)
+        \\  --upstreams-config <file> JSON config file with multiple upstreams
+        \\  --poll-ms <ms>            Poll interval in milliseconds
+        \\  --timeout-ms <ms>         Request timeout in milliseconds
+        \\  --stale-ms <ms>           Stale threshold in milliseconds
+        \\  --static-dir <dir>        Optional static frontend directory
+        \\  --help                    Show this help
         \\
         \\Env vars:
         \\  LEANPOINT_BIND_ADDR, LEANPOINT_BIND_PORT, LEANPOINT_LEAN_URL,
         \\  LEANPOINT_LEAN_PATH, LEANPOINT_POLL_MS, LEANPOINT_TIMEOUT_MS,
-        \\  LEANPOINT_STALE_MS, LEANPOINT_STATIC_DIR
+        \\  LEANPOINT_STALE_MS, LEANPOINT_STATIC_DIR, LEANPOINT_UPSTREAMS_CONFIG
+        \\
+        \\Multi-upstream mode:
+        \\  When --upstreams-config is specified, leanpoint polls multiple beacon
+        \\  nodes and only serves finality when 50%+ of upstreams agree (consensus).
         \\
     , .{});
 }

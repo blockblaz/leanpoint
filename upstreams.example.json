@@ -1,0 +1,34 @@
+{
+  "upstreams": [
+    {
+      "name": "zeam_0",
+      "url": "http://localhost:5052",
+      "path": "/status"
+    },
+    {
+      "name": "ream_0",
+      "url": "http://localhost:5053",
+      "path": "/status"
+    },
+    {
+      "name": "qlean_0",
+      "url": "http://localhost:5054",
+      "path": "/status"
+    },
+    {
+      "name": "lantern_0",
+      "url": "http://localhost:5055",
+      "path": "/status"
+    },
+    {
+      "name": "lighthouse_0",
+      "url": "http://localhost:5056",
+      "path": "/eth/v1/beacon/states/finalized/finality_checkpoints"
+    },
+    {
+      "name": "grandine_0",
+      "url": "http://localhost:5057",
+      "path": "/eth/v1/beacon/states/finalized/finality_checkpoints"
+    }
+  ]
+}

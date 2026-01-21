@@ -29,3 +29,6 @@ deps.zig
 
 # Log files
 *.log
+
+# User-specific configuration
+upstreams.json
