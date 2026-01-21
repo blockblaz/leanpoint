@@ -1,0 +1,31 @@
+# Zig build artifacts
+zig-cache/
+.zig-cache/
+zig-out/
+
+# Build outputs
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependencies
+.zigmod/
+deps.zig
+
+# Test coverage
+*.profraw
+*.profdata
+
+# Log files
+*.log
