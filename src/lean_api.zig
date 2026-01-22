@@ -72,7 +72,7 @@ fn fetchSlotFromEndpoint(
 
     // Parse JSON - expecting just a number
     const body = body_buf.items;
-    
+
     // Try to parse as direct number first
     const slot = std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10) catch {
         // If that fails, try parsing as JSON object with "slot" field
