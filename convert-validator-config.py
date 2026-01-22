@@ -4,7 +4,7 @@ Convert validator-config.yaml to upstreams.json for leanpoint.
 
 This script reads a validator-config.yaml file (used by lean-quickstart)
 and generates an upstreams.json file that leanpoint can use to monitor
-multiple beacon nodes.
+multiple lean nodes.
 
 Usage:
     python3 convert-validator-config.py [validator-config.yaml] [output.json]
