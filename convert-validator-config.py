@@ -53,7 +53,7 @@ def convert_validator_config(yaml_path: str, output_path: str, base_port: int = 
         upstream = {
             "name": name,
             "url": f"http://{ip}:{http_port}",
-            "path": "/status"
+            "path": "/health"  # Health check endpoint
         }
         
         upstreams.append(upstream)
