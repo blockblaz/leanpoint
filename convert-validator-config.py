@@ -20,7 +20,7 @@ import json
 import yaml
 
 
-def convert_validator_config(yaml_path: str, output_path: str, base_port: int = 5052):
+def convert_validator_config(yaml_path: str, output_path: str, base_port: int = 8081):
     """
     Convert validator-config.yaml to upstreams.json.
     
