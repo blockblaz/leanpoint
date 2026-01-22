@@ -113,10 +113,9 @@ fn pollLoopMulti(
             const latency_ms = @as(u64, @intCast(delta_ms));
             state.updateSuccess(allocator, slots.justified_slot, slots.finalized_slot, latency_ms, now_ms);
         } else {
-            var msg_buf = std.ArrayList(u8).init(allocator);
-            defer msg_buf.deinit();
-            try msg_buf.writer().print("no consensus reached among upstreams", .{});
-            state.updateError(allocator, msg_buf.items, now_ms);
+            const error_msg = upstreams.getErrorSummary(allocator) catch "failed to get error summary";
+            defer allocator.free(error_msg);
+            state.updateError(allocator, error_msg, now_ms);
         }
 
         std.time.sleep(config.poll_interval_ms * std.time.ns_per_ms);
