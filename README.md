@@ -3,7 +3,7 @@
 [![CI](https://github.com/blockblaz/leanpoint/workflows/CI/badge.svg)](https://github.com/blockblaz/leanpoint/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A lightweight, fast Zig service that monitors finality across multiple Lean Ethereum beacon nodes with consensus validation. Inspired by [checkpointz](https://github.com/ethpandaops/checkpointz), leanpoint provides reliable checkpoint sync monitoring for the Lean Ethereum ecosystem.
+A lightweight, fast Zig service that monitors finality across multiple Lean Ethereum lean nodes with consensus validation. Inspired by [checkpointz](https://github.com/ethpandaops/checkpointz), leanpoint provides reliable checkpoint sync monitoring for the Lean Ethereum ecosystem.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ A lightweight, fast Zig service that monitors finality across multiple Lean Ethe
 
 ## Overview
 
-Leanpoint polls multiple beacon nodes, requires 50%+ consensus before serving finality data, and exposes a simple HTTP API with Prometheus metrics. It's designed for:
+Leanpoint polls multiple lean nodes, requires 50%+ consensus before serving finality data, and exposes a simple HTTP API with Prometheus metrics. It's designed for:
 
 - **Devnet Monitoring**: Track finality across local test networks
 - **Production Deployments**: Provide reliable checkpoint sync data
@@ -33,7 +33,7 @@ Leanpoint polls multiple beacon nodes, requires 50%+ consensus before serving fi
 ## Features
 
 - ✅ **Multi-upstream support** with 50%+ consensus requirement (like checkpointz)
-- ✅ **Parallel polling** of all beacon nodes for low latency
+- ✅ **Parallel polling** of all lean nodes for low latency
 - ✅ **Per-upstream health tracking** with error counts and timestamps
 - ✅ **Prometheus metrics** for comprehensive monitoring
 - ✅ **Health check endpoint** for load balancers and orchestration
@@ -173,7 +173,7 @@ If `--static-dir` is set, other paths serve files from that directory.
 
 ### Single Upstream Mode (Legacy)
 
-For monitoring a single beacon node:
+For monitoring a single lean node:
 
 ```bash
 leanpoint \
@@ -189,7 +189,7 @@ leanpoint \
 
 ### Multi-Upstream Mode (Recommended)
 
-Monitor multiple beacon nodes with consensus validation:
+Monitor multiple lean nodes with consensus validation:
 
 ```bash
 leanpoint \
@@ -563,7 +563,7 @@ cat upstreams.json | jq '.upstreams[].url'
 # Check nodes are running
 ps aux | grep -E "zeam|ream|qlean"
 
-# Verify beacon API is exposed
+# Verify lean API is exposed
 curl -v http://localhost:5052/status
 
 # Check node startup logs for API endpoint
@@ -650,7 +650,7 @@ docker build -t leanpoint:latest .
 ```bash
 # Create configuration first
 cp upstreams.example.json upstreams.json
-# Edit upstreams.json with your beacon node endpoints
+# Edit upstreams.json with your lean node endpoints
 
 # Run container
 docker run -d \

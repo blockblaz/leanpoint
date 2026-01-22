@@ -5,19 +5,52 @@ pub const Slots = struct {
     finalized_slot: u64,
 };
 
+/// Fetch finalized and justified slots from separate endpoints
 pub fn fetchSlots(
     allocator: std.mem.Allocator,
     client: *std.http.Client,
     base_url: []const u8,
-    path: []const u8,
+    _: []const u8, // path parameter not used anymore
 ) !Slots {
-    const full_url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_url, path });
-    defer allocator.free(full_url);
+    // Fetch finalized slot
+    const finalized_slot = try fetchSlotFromEndpoint(
+        allocator,
+        client,
+        base_url,
+        "/lean/states/finalized",
+    );
 
-    const uri = try std.Uri.parse(full_url);
-    var header_buffer: [8 * 1024]u8 = undefined;
+    // Fetch justified slot
+    const justified_slot = try fetchSlotFromEndpoint(
+        allocator,
+        client,
+        base_url,
+        "/lean/states/justified",
+    );
+
+    return Slots{
+        .justified_slot = justified_slot,
+        .finalized_slot = finalized_slot,
+    };
+}
+
+fn fetchSlotFromEndpoint(
+    allocator: std.mem.Allocator,
+    client: *std.http.Client,
+    base_url: []const u8,
+    path: []const u8,
+) !u64 {
+    // Build full URL
+    var url_buf: [512]u8 = undefined;
+    const url = try std.fmt.bufPrint(&url_buf, "{s}{s}", .{ base_url, path });
+
+    // Parse URI
+    const uri = try std.Uri.parse(url);
+
+    // Make request
+    var header_buf: [4096]u8 = undefined;
     var req = try client.open(.GET, uri, .{
-        .server_header_buffer = &header_buffer,
+        .server_header_buffer = &header_buf,
     });
     defer req.deinit();
 
@@ -25,89 +58,45 @@ pub fn fetchSlots(
     try req.finish();
     try req.wait();
 
+    // Check status
     if (req.response.status != .ok) {
-        return error.UnexpectedStatus;
+        return error.BadStatus;
     }
 
-    const body = try req.reader().readAllAlloc(allocator, 1024 * 1024);
-    defer allocator.free(body);
+    // Read response body
+    var body_buf = std.ArrayList(u8).init(allocator);
+    defer body_buf.deinit();
 
-    return parseSlotsFromJson(allocator, body);
-}
+    const max_bytes = 1024 * 1024; // 1 MB limit
+    try req.reader().readAllArrayList(&body_buf, max_bytes);
 
-pub fn parseSlotsFromJson(allocator: std.mem.Allocator, body: []const u8) !Slots {
-    var parsed = try std.json.parseFromSlice(std.json.Value, allocator, body, .{});
-    defer parsed.deinit();
-    const root = parsed.value;
+    // Parse JSON - expecting just a number
+    const body = body_buf.items;
 
-    if (try parseTopLevel(root)) |slots| return slots;
-    if (try parseDataObject(root)) |slots| return slots;
-
-    return error.UnexpectedResponse;
-}
-
-fn parseTopLevel(root: std.json.Value) !?Slots {
-    if (root != .object) return null;
-    const obj = root.object;
-    const justified_val = obj.get("justified_slot") orelse return null;
-    const finalized_val = obj.get("finalized_slot") orelse return null;
-    return Slots{
-        .justified_slot = try parseJsonU64(justified_val),
-        .finalized_slot = try parseJsonU64(finalized_val),
+    // Try to parse as direct number first
+    const slot = std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10) catch {
+        // If that fails, try parsing as JSON object with "slot" field
+        const parsed = try std.json.parseFromSlice(
+            struct { slot: u64 },
+            allocator,
+            body,
+            .{},
+        );
+        defer parsed.deinit();
+        return parsed.value.slot;
     };
+
+    return slot;
 }
 
-fn parseDataObject(root: std.json.Value) !?Slots {
-    if (root != .object) return null;
-    const obj = root.object;
-    const data_val = obj.get("data") orelse return null;
-    if (data_val != .object) return null;
-    const data_obj = data_val.object;
-
-    if (data_obj.get("justified_slot")) |justified_val| {
-        if (data_obj.get("finalized_slot")) |finalized_val| {
-            return Slots{
-                .justified_slot = try parseJsonU64(justified_val),
-                .finalized_slot = try parseJsonU64(finalized_val),
-            };
-        }
-    }
-
-    const justified_obj = data_obj.get("justified") orelse return null;
-    const finalized_obj = data_obj.get("finalized") orelse return null;
-    if (justified_obj != .object or finalized_obj != .object) return null;
-
-    const justified_slot_val = justified_obj.object.get("slot") orelse return null;
-    const finalized_slot_val = finalized_obj.object.get("slot") orelse return null;
-
-    return Slots{
-        .justified_slot = try parseJsonU64(justified_slot_val),
-        .finalized_slot = try parseJsonU64(finalized_slot_val),
-    };
+test "parse slot from plain number" {
+    const body = "12345";
+    const slot = try std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10);
+    try std.testing.expectEqual(@as(u64, 12345), slot);
 }
 
-fn parseJsonU64(value: std.json.Value) !u64 {
-    return switch (value) {
-        .integer => |i| if (i < 0) error.InvalidValue else @as(u64, @intCast(i)),
-        .string => |s| std.fmt.parseInt(u64, s, 10),
-        else => error.InvalidValue,
-    };
-}
-
-test "parseSlotsFromJson supports top-level fields" {
-    const input =
-        \\{"justified_slot":123,"finalized_slot":"120"}
-    ;
-    const slots = try parseSlotsFromJson(std.testing.allocator, input);
-    try std.testing.expectEqual(@as(u64, 123), slots.justified_slot);
-    try std.testing.expectEqual(@as(u64, 120), slots.finalized_slot);
-}
-
-test "parseSlotsFromJson supports data.justified.slot" {
-    const input =
-        \\{"data":{"justified":{"slot":"64"},"finalized":{"slot":32}}}
-    ;
-    const slots = try parseSlotsFromJson(std.testing.allocator, input);
-    try std.testing.expectEqual(@as(u64, 64), slots.justified_slot);
-    try std.testing.expectEqual(@as(u64, 32), slots.finalized_slot);
+test "parse slot from quoted number" {
+    const body = "\"12345\"";
+    const slot = try std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10);
+    try std.testing.expectEqual(@as(u64, 12345), slot);
 }

@@ -54,6 +54,40 @@ pub const UpstreamManager = struct {
         try self.upstreams.append(upstream);
     }
 
+    /// Get detailed error summary of all upstreams
+    pub fn getErrorSummary(self: *UpstreamManager, allocator: std.mem.Allocator) ![]const u8 {
+        var failed_count: u32 = 0;
+        const total = self.upstreams.items.len;
+
+        for (self.upstreams.items) |upstream| {
+            if (upstream.last_error != null) {
+                failed_count += 1;
+            }
+        }
+
+        if (failed_count == total) {
+            // All upstreams failed
+            var buf = std.ArrayList(u8).init(allocator);
+            errdefer buf.deinit();
+
+            try buf.appendSlice("all upstreams failed: ");
+            for (self.upstreams.items, 0..) |upstream, i| {
+                if (i > 0) try buf.appendSlice(", ");
+                try buf.writer().print("{s} ({s})", .{ upstream.name, upstream.base_url });
+            }
+            return buf.toOwnedSlice();
+        } else if (failed_count > 0) {
+            // Some upstreams failed
+            return std.fmt.allocPrint(
+                allocator,
+                "{d}/{d} upstreams unreachable, no consensus",
+                .{ failed_count, total },
+            );
+        } else {
+            return allocator.dupe(u8, "no consensus reached among upstreams");
+        }
+    }
+
     /// Poll all upstreams and return consensus slots if 50%+ agree
     pub fn pollUpstreams(
         self: *UpstreamManager,
@@ -79,11 +113,17 @@ pub const UpstreamManager = struct {
                 if (upstream.last_error) |old_err| self.allocator.free(old_err);
                 upstream.last_error = std.fmt.allocPrint(
                     self.allocator,
-                    "poll error: {s}",
-                    .{@errorName(err)},
+                    "{s} ({s})",
+                    .{ @errorName(err), upstream.base_url },
                 ) catch null;
                 continue;
             };
+
+            // Clear error on success
+            if (upstream.last_error) |old_err| {
+                self.allocator.free(old_err);
+                upstream.last_error = null;
+            }
 
             // Update upstream state
             upstream.last_slots = slots;

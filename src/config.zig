@@ -187,7 +187,7 @@ fn printUsage() void {
         \\  LEANPOINT_STALE_MS, LEANPOINT_STATIC_DIR, LEANPOINT_UPSTREAMS_CONFIG
         \\
         \\Multi-upstream mode:
-        \\  When --upstreams-config is specified, leanpoint polls multiple beacon
+        \\  When --upstreams-config is specified, leanpoint polls multiple lean
         \\  nodes and only serves finality when 50%+ of upstreams agree (consensus).
         \\
     , .{});
