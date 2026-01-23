@@ -5,28 +5,25 @@ pub const Slots = struct {
     finalized_slot: u64,
 };
 
-/// Fetch finalized and justified slots from separate endpoints
+/// Fetch finalized and justified slots from lean node endpoints
+/// The finalized endpoint returns SSZ-encoded state data
 pub fn fetchSlots(
     allocator: std.mem.Allocator,
     client: *std.http.Client,
     base_url: []const u8,
     _: []const u8, // path parameter not used anymore
 ) !Slots {
-    // Fetch finalized slot
-    const finalized_slot = try fetchSlotFromEndpoint(
+    // Fetch finalized slot from SSZ-encoded endpoint
+    const finalized_slot = try fetchSlotFromSSZEndpoint(
         allocator,
         client,
         base_url,
         "/lean/states/finalized",
     );
 
-    // Fetch justified slot
-    const justified_slot = try fetchSlotFromEndpoint(
-        allocator,
-        client,
-        base_url,
-        "/lean/states/justified",
-    );
+    // For now, use finalized slot as justified slot since /lean/states/justified returns 404
+    // TODO: Find the correct endpoint for justified slot
+    const justified_slot = finalized_slot;
 
     return Slots{
         .justified_slot = justified_slot,
@@ -34,7 +31,10 @@ pub fn fetchSlots(
     };
 }
 
-fn fetchSlotFromEndpoint(
+/// Fetch slot from SSZ-encoded endpoint
+/// The lean nodes return SSZ-encoded BeaconState data
+/// The slot is the first field (first 8 bytes as little-endian u64)
+fn fetchSlotFromSSZEndpoint(
     allocator: std.mem.Allocator,
     client: *std.http.Client,
     base_url: []const u8,
@@ -63,40 +63,42 @@ fn fetchSlotFromEndpoint(
         return error.BadStatus;
     }
 
-    // Read response body
+    // Read response body (SSZ binary data)
     var body_buf = std.ArrayList(u8).init(allocator);
     defer body_buf.deinit();
 
-    const max_bytes = 1024 * 1024; // 1 MB limit
+    const max_bytes = 10 * 1024 * 1024; // 10 MB limit for state data
     try req.reader().readAllArrayList(&body_buf, max_bytes);
 
-    // Parse JSON - expecting just a number
     const body = body_buf.items;
 
-    // Try to parse as direct number first
-    const slot = std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10) catch {
-        // If that fails, try parsing as JSON object with "slot" field
-        const parsed = try std.json.parseFromSlice(
-            struct { slot: u64 },
-            allocator,
-            body,
-            .{},
-        );
-        defer parsed.deinit();
-        return parsed.value.slot;
-    };
+    // SSZ-encoded BeaconState: slot is the first field (8 bytes, little-endian u64)
+    if (body.len < 8) {
+        return error.InvalidSSZData;
+    }
+
+    // Read first 8 bytes as little-endian u64
+    const slot = std.mem.readInt(u64, body[0..8], .little);
 
     return slot;
 }
 
-test "parse slot from plain number" {
-    const body = "12345";
-    const slot = try std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10);
+test "parse SSZ slot from binary data" {
+    // Simulate SSZ data where first 8 bytes represent slot
+    var data: [8]u8 = undefined;
+    std.mem.writeInt(u64, &data, 12345, .little);
+
+    const slot = std.mem.readInt(u64, data[0..8], .little);
     try std.testing.expectEqual(@as(u64, 12345), slot);
 }
 
-test "parse slot from quoted number" {
-    const body = "\"12345\"";
-    const slot = try std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10);
-    try std.testing.expectEqual(@as(u64, 12345), slot);
+test "parse SSZ slot with additional data" {
+    // Simulate SSZ data with slot + other fields
+    var data: [100]u8 = undefined;
+    std.mem.writeInt(u64, data[0..8], 99999, .little);
+    // Fill rest with dummy data
+    @memset(data[8..], 0xFF);
+
+    const slot = std.mem.readInt(u64, data[0..8], .little);
+    try std.testing.expectEqual(@as(u64, 99999), slot);
 }
