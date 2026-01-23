@@ -6,7 +6,7 @@ pub const Slots = struct {
 };
 
 /// Fetch finalized and justified slots from lean node endpoints
-/// The finalized endpoint returns SSZ-encoded BeamState data
+/// The finalized endpoint returns SSZ-encoded LeanState data
 pub fn fetchSlots(
     allocator: std.mem.Allocator,
     client: *std.http.Client,
@@ -32,10 +32,10 @@ pub fn fetchSlots(
 }
 
 /// Fetch slot from SSZ-encoded endpoint
-/// The lean nodes return SSZ-encoded BeamState data in this structure:
+/// The lean nodes return SSZ-encoded LeanState data in this structure:
 ///   - config.genesis_time: u64 (8 bytes, offset 0-7)
 ///   - slot: u64 (8 bytes, offset 8-15)
-///   - latest_block_header: BeamBlockHeader (112 bytes, offset 16-127)
+///   - latest_block_header: LeanBlockHeader (112 bytes, offset 16-127)
 ///     - slot: u64 (8 bytes)
 ///     - proposer_index: u64 (8 bytes)
 ///     - parent_root: [32]u8 (32 bytes)
@@ -90,14 +90,14 @@ fn fetchSlotFromSSZEndpoint(
     }
 
     // Extract slot from bytes 8-15 (little-endian u64)
-    // This is the second field in BeamState after config.genesis_time
+    // This is the second field in LeanState after config.genesis_time
     const slot = std.mem.readInt(u64, body[8..16], .little);
 
     return slot;
 }
 
 test "extract slot from ssz bytes" {
-    // Simulate SSZ BeamState data
+    // Simulate SSZ LeanState data
     var data: [300]u8 = undefined;
     @memset(&data, 0);
 
