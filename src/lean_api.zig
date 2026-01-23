@@ -6,7 +6,7 @@ pub const Slots = struct {
 };
 
 /// Fetch finalized and justified slots from lean node endpoints
-/// The finalized endpoint returns SSZ-encoded state data
+/// The finalized endpoint returns SSZ-encoded BeamState data
 pub fn fetchSlots(
     allocator: std.mem.Allocator,
     client: *std.http.Client,
@@ -32,8 +32,20 @@ pub fn fetchSlots(
 }
 
 /// Fetch slot from SSZ-encoded endpoint
-/// The lean nodes return SSZ-encoded BeaconState data
-/// The slot is the first field (first 8 bytes as little-endian u64)
+/// The lean nodes return SSZ-encoded BeamState data in this structure:
+///   - config.genesis_time: u64 (8 bytes, offset 0-7)
+///   - slot: u64 (8 bytes, offset 8-15)
+///   - latest_block_header: BeamBlockHeader (112 bytes, offset 16-127)
+///     - slot: u64 (8 bytes)
+///     - proposer_index: u64 (8 bytes)
+///     - parent_root: [32]u8 (32 bytes)
+///     - state_root: [32]u8 (32 bytes)
+///     - body_root: [32]u8 (32 bytes)
+///   - latest_justified: Checkpoint (40 bytes, offset 128-167)
+///   - latest_finalized: Checkpoint (40 bytes, offset 168-207)
+///   - Then offsets for variable-length fields...
+///
+/// We extract the slot directly from bytes 8-15 (little-endian u64)
 fn fetchSlotFromSSZEndpoint(
     allocator: std.mem.Allocator,
     client: *std.http.Client,
@@ -72,33 +84,30 @@ fn fetchSlotFromSSZEndpoint(
 
     const body = body_buf.items;
 
-    // SSZ-encoded BeaconState: slot is the first field (8 bytes, little-endian u64)
-    if (body.len < 8) {
+    // Validate we have enough bytes to read the slot
+    if (body.len < 16) {
         return error.InvalidSSZData;
     }
 
-    // Read first 8 bytes as little-endian u64
-    const slot = std.mem.readInt(u64, body[0..8], .little);
+    // Extract slot from bytes 8-15 (little-endian u64)
+    // This is the second field in BeamState after config.genesis_time
+    const slot = std.mem.readInt(u64, body[8..16], .little);
 
     return slot;
 }
 
-test "parse SSZ slot from binary data" {
-    // Simulate SSZ data where first 8 bytes represent slot
-    var data: [8]u8 = undefined;
-    std.mem.writeInt(u64, &data, 12345, .little);
+test "extract slot from ssz bytes" {
+    // Simulate SSZ BeamState data
+    var data: [300]u8 = undefined;
+    @memset(&data, 0);
 
-    const slot = std.mem.readInt(u64, data[0..8], .little);
-    try std.testing.expectEqual(@as(u64, 12345), slot);
-}
+    // config.genesis_time at offset 0-7
+    std.mem.writeInt(u64, data[0..8], 1234567890, .little);
 
-test "parse SSZ slot with additional data" {
-    // Simulate SSZ data with slot + other fields
-    var data: [100]u8 = undefined;
-    std.mem.writeInt(u64, data[0..8], 99999, .little);
-    // Fill rest with dummy data
-    @memset(data[8..], 0xFF);
+    // slot at offset 8-15
+    std.mem.writeInt(u64, data[8..16], 42, .little);
 
-    const slot = std.mem.readInt(u64, data[0..8], .little);
-    try std.testing.expectEqual(@as(u64, 99999), slot);
+    // Read back the slot
+    const slot = std.mem.readInt(u64, data[8..16], .little);
+    try std.testing.expectEqual(@as(u64, 42), slot);
 }
