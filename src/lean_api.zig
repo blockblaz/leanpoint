@@ -18,10 +18,10 @@ pub fn fetchSlots(
         allocator,
         client,
         base_url,
-        "/lean/states/finalized",
+        "/lean/v0/states/finalized",
     );
 
-    // For now, use finalized slot as justified slot since /lean/states/justified returns 404
+    // For now, use finalized slot as justified slot since /lean/v0/states/justified returns 404
     // TODO: Find the correct endpoint for justified slot
     const justified_slot = finalized_slot;
 

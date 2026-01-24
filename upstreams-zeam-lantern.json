@@ -1,0 +1,14 @@
+{
+  "upstreams": [
+    {
+      "name": "zeam_0",
+      "url": "http://46.224.123.223:9095",
+      "path": "/v0/health"
+    },
+    {
+      "name": "lantern_0",
+      "url": "http://46.224.135.177:9095",
+      "path": "/v0/health"
+    }
+  ]
+}
