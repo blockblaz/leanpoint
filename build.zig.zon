@@ -36,6 +36,10 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
+        .ssz = .{
+            .url = "git+https://github.com/blockblaz/ssz.zig#5ce7322fc45cab4f215021cae2579d1343e05d55",
+            .hash = "ssz-0.0.9-Lfwd61PEAgAUPJfUQiK4R5gRX_lTWOd_qYwNT-KAhRLA",
+        },
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         //.example = .{
         //    // When updating this field to a new URL, be sure to delete the corresponding

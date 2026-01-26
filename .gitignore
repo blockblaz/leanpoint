@@ -32,3 +32,10 @@ deps.zig
 
 # User-specific configuration
 upstreams.json
+upstreams-*.json
+!upstreams.example.json
+
+# Frontend
+web/node_modules/
+web-dist/
+*.local

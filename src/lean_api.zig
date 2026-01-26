@@ -5,28 +5,25 @@ pub const Slots = struct {
     finalized_slot: u64,
 };
 
-/// Fetch finalized and justified slots from separate endpoints
+/// Fetch finalized and justified slots from lean node endpoints
+/// The finalized endpoint returns SSZ-encoded LeanState data
 pub fn fetchSlots(
     allocator: std.mem.Allocator,
     client: *std.http.Client,
     base_url: []const u8,
     _: []const u8, // path parameter not used anymore
 ) !Slots {
-    // Fetch finalized slot
-    const finalized_slot = try fetchSlotFromEndpoint(
+    // Fetch finalized slot from SSZ-encoded endpoint
+    const finalized_slot = try fetchSlotFromSSZEndpoint(
         allocator,
         client,
         base_url,
-        "/lean/states/finalized",
+        "/lean/v0/states/finalized",
     );
 
-    // Fetch justified slot
-    const justified_slot = try fetchSlotFromEndpoint(
-        allocator,
-        client,
-        base_url,
-        "/lean/states/justified",
-    );
+    // For now, use finalized slot as justified slot since /lean/v0/states/justified returns 404
+    // TODO: Find the correct endpoint for justified slot
+    const justified_slot = finalized_slot;
 
     return Slots{
         .justified_slot = justified_slot,
@@ -34,7 +31,22 @@ pub fn fetchSlots(
     };
 }
 
-fn fetchSlotFromEndpoint(
+/// Fetch slot from SSZ-encoded endpoint
+/// The lean nodes return SSZ-encoded LeanState data in this structure:
+///   - config.genesis_time: u64 (8 bytes, offset 0-7)
+///   - slot: u64 (8 bytes, offset 8-15)
+///   - latest_block_header: LeanBlockHeader (112 bytes, offset 16-127)
+///     - slot: u64 (8 bytes)
+///     - proposer_index: u64 (8 bytes)
+///     - parent_root: [32]u8 (32 bytes)
+///     - state_root: [32]u8 (32 bytes)
+///     - body_root: [32]u8 (32 bytes)
+///   - latest_justified: Checkpoint (40 bytes, offset 128-167)
+///   - latest_finalized: Checkpoint (40 bytes, offset 168-207)
+///   - Then offsets for variable-length fields...
+///
+/// We extract the slot directly from bytes 8-15 (little-endian u64)
+fn fetchSlotFromSSZEndpoint(
     allocator: std.mem.Allocator,
     client: *std.http.Client,
     base_url: []const u8,
@@ -63,40 +75,39 @@ fn fetchSlotFromEndpoint(
         return error.BadStatus;
     }
 
-    // Read response body
+    // Read response body (SSZ binary data)
     var body_buf = std.ArrayList(u8).init(allocator);
     defer body_buf.deinit();
 
-    const max_bytes = 1024 * 1024; // 1 MB limit
+    const max_bytes = 10 * 1024 * 1024; // 10 MB limit for state data
     try req.reader().readAllArrayList(&body_buf, max_bytes);
 
-    // Parse JSON - expecting just a number
     const body = body_buf.items;
 
-    // Try to parse as direct number first
-    const slot = std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10) catch {
-        // If that fails, try parsing as JSON object with "slot" field
-        const parsed = try std.json.parseFromSlice(
-            struct { slot: u64 },
-            allocator,
-            body,
-            .{},
-        );
-        defer parsed.deinit();
-        return parsed.value.slot;
-    };
+    // Validate we have enough bytes to read the slot
+    if (body.len < 16) {
+        return error.InvalidSSZData;
+    }
+
+    // Extract slot from bytes 8-15 (little-endian u64)
+    // This is the second field in LeanState after config.genesis_time
+    const slot = std.mem.readInt(u64, body[8..16], .little);
 
     return slot;
 }
 
-test "parse slot from plain number" {
-    const body = "12345";
-    const slot = try std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10);
-    try std.testing.expectEqual(@as(u64, 12345), slot);
-}
+test "extract slot from ssz bytes" {
+    // Simulate SSZ LeanState data
+    var data: [300]u8 = undefined;
+    @memset(&data, 0);
 
-test "parse slot from quoted number" {
-    const body = "\"12345\"";
-    const slot = try std.fmt.parseInt(u64, std.mem.trim(u8, body, " \t\n\r\""), 10);
-    try std.testing.expectEqual(@as(u64, 12345), slot);
+    // config.genesis_time at offset 0-7
+    std.mem.writeInt(u64, data[0..8], 1234567890, .little);
+
+    // slot at offset 8-15
+    std.mem.writeInt(u64, data[8..16], 42, .little);
+
+    // Read back the slot
+    const slot = std.mem.readInt(u64, data[8..16], .little);
+    try std.testing.expectEqual(@as(u64, 42), slot);
 }

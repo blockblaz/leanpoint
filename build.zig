@@ -28,6 +28,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Add SSZ dependency
+    const ssz_dep = b.dependency("ssz", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const ssz_mod = ssz_dep.module("ssz.zig");
+
     // We will also create a module for our other entry point, 'main.zig'.
     const exe_mod = b.createModule(.{
         // `root_source_file` is the Zig "entry point" of the module. If a module
@@ -38,6 +45,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    // Add SSZ module to both lib_mod and exe_mod
+    lib_mod.addImport("ssz", ssz_mod);
+    exe_mod.addImport("ssz", ssz_mod);
 
     // Modules can depend on one another using the `std.Build.Module.addImport` function.
     // This is what allows Zig source code to use `@import("foo")` where 'foo' is not a
