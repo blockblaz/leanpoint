@@ -7,7 +7,9 @@ FROM alpine:latest AS builder
 RUN apk add --no-cache \
     curl \
     xz \
-    bash
+    bash \
+    nodejs \
+    npm
 
 # Install Zig 0.14.1
 ARG ZIG_VERSION=0.14.1
@@ -23,8 +25,13 @@ WORKDIR /build
 COPY build.zig build.zig.zon ./
 COPY src/ ./src/
 
-# Build the project
+# Build the backend
 RUN zig build -Doptimize=ReleaseSafe
+
+# Copy and build frontend
+COPY web/ ./web/
+COPY Makefile ./
+RUN cd web && npm ci && npm run build
 
 # Stage 2: Runtime stage
 FROM alpine:latest
@@ -40,11 +47,14 @@ RUN addgroup -g 1000 leanpoint && \
     adduser -D -u 1000 -G leanpoint leanpoint
 
 # Create directories
-RUN mkdir -p /etc/leanpoint /var/lib/leanpoint && \
-    chown -R leanpoint:leanpoint /etc/leanpoint /var/lib/leanpoint
+RUN mkdir -p /etc/leanpoint /var/lib/leanpoint /usr/share/leanpoint/web && \
+    chown -R leanpoint:leanpoint /etc/leanpoint /var/lib/leanpoint /usr/share/leanpoint
 
 # Copy binary from builder
 COPY --from=builder /build/zig-out/bin/leanpoint /usr/local/bin/leanpoint
+
+# Copy web UI from builder
+COPY --from=builder /build/web-dist/ /usr/share/leanpoint/web/
 
 # Copy example config
 COPY upstreams.example.json /etc/leanpoint/upstreams.example.json
@@ -58,5 +68,5 @@ EXPOSE 5555
 # Set working directory
 WORKDIR /var/lib/leanpoint
 
-# Default command
-CMD ["leanpoint", "--help"]
+# Default command - serve with web UI
+CMD ["leanpoint", "--upstreams-config", "/etc/leanpoint/upstreams.json", "--static-dir", "/usr/share/leanpoint/web"]

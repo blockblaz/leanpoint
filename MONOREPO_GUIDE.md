@@ -224,14 +224,16 @@ make build
 The Dockerfile already supports the monorepo structure:
 
 ```bash
-# Build image
+# Build image (includes web UI)
 docker build -t leanpoint:latest .
 
-# Run with static UI
+# Run with web UI
 docker run -p 5555:5555 \
-  -v $(pwd)/upstreams.json:/app/upstreams.json \
-  leanpoint:latest \
-  --upstreams-config /app/upstreams.json --static-dir /app/web-dist
+  -v $(pwd)/upstreams.json:/etc/leanpoint/upstreams.json \
+  leanpoint:latest
+
+# The image automatically serves the web UI from /usr/share/leanpoint/web
+# Access at http://localhost:5555
 ```
 
 ### Static Binary + Frontend
