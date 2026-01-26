@@ -149,7 +149,7 @@ fn handleApiUpstreams(
     req: *std.http.Server.Request,
 ) !void {
     _ = config;
-    
+
     // Get upstreams data from state
     const upstreams_data = try state.getUpstreamsData(allocator);
     defer {
@@ -163,24 +163,24 @@ fn handleApiUpstreams(
 
     // Start JSON response
     try writer.writeAll("{\"upstreams\":[");
-    
+
     // Write each upstream
     for (upstreams_data.upstreams, 0..) |upstream, i| {
         if (i > 0) try writer.writeAll(",");
-        
+
         const name_json = try jsonString(allocator, upstream.name);
         defer allocator.free(name_json);
         const url_json = try jsonString(allocator, upstream.url);
         defer allocator.free(url_json);
         const path_json = try jsonString(allocator, upstream.path);
         defer allocator.free(path_json);
-        
+
         var last_error_json: ?[]const u8 = null;
         defer if (last_error_json) |value| allocator.free(value);
         if (upstream.last_error) |msg| {
             last_error_json = try jsonString(allocator, msg);
         }
-        
+
         try writer.print(
             \\{{"name":{s},"url":{s},"path":{s},"healthy":{s},"last_success_ms":{s},"error_count":{d},"last_error":{s},"last_justified_slot":{s},"last_finalized_slot":{s}}}
         , .{
@@ -195,19 +195,21 @@ fn handleApiUpstreams(
             } else "null",
             upstream.error_count,
             last_error_json orelse "null",
-            if (upstream.last_justified_slot) |slot| blk: {
+            if (upstream.last_justified_slot) |slot|
+            blk: {
                 var num_buf: [32]u8 = undefined;
                 const num_str = try std.fmt.bufPrint(&num_buf, "{d}", .{slot});
                 break :blk num_str;
             } else "null",
-            if (upstream.last_finalized_slot) |slot| blk: {
+            if (upstream.last_finalized_slot) |slot|
+            blk: {
                 var num_buf: [32]u8 = undefined;
                 const num_str = try std.fmt.bufPrint(&num_buf, "{d}", .{slot});
                 break :blk num_str;
             } else "null",
         });
     }
-    
+
     // Write consensus info
     try writer.print(
         \\],"consensus":{{"total_upstreams":{d},"responding_upstreams":{d},"consensus_threshold":50,"has_consensus":{s}}}}}

@@ -25,7 +25,7 @@ pub fn main() !void {
             return err;
         };
         defer upstreams.deinit();
-        
+
         state = state_mod.AppState.init(&upstreams);
 
         std.debug.print("Loaded {d} upstreams\n", .{upstreams.upstreams.items.len});
@@ -36,7 +36,7 @@ pub fn main() !void {
     } else {
         // Legacy single upstream mode
         state = state_mod.AppState.init(null);
-        
+
         const poller_thread = try std.Thread.spawn(.{}, pollLoop, .{ allocator, &config, &state });
         defer poller_thread.detach();
 
