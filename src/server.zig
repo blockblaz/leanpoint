@@ -59,6 +59,10 @@ fn handleRequest(
         try handleHealthz(allocator, config, state, req);
         return;
     }
+    if (std.mem.eql(u8, path, "/api/upstreams")) {
+        try handleApiUpstreams(allocator, config, state, req);
+        return;
+    }
 
     if (config.static_dir) |static_dir| {
         if (try handleStatic(allocator, static_dir, path, req)) return;
@@ -136,6 +140,84 @@ fn handleHealthz(
     } else {
         try respondText(req, .ok, "ok\n", "text/plain");
     }
+}
+
+fn handleApiUpstreams(
+    allocator: std.mem.Allocator,
+    config: *const config_mod.Config,
+    state: *state_mod.AppState,
+    req: *std.http.Server.Request,
+) !void {
+    _ = config;
+    
+    // Get upstreams data from state
+    const upstreams_data = try state.getUpstreamsData(allocator);
+    defer {
+        var data = upstreams_data;
+        data.deinit(allocator);
+    }
+
+    var buffer = std.ArrayList(u8).init(allocator);
+    defer buffer.deinit();
+    const writer = buffer.writer();
+
+    // Start JSON response
+    try writer.writeAll("{\"upstreams\":[");
+    
+    // Write each upstream
+    for (upstreams_data.upstreams, 0..) |upstream, i| {
+        if (i > 0) try writer.writeAll(",");
+        
+        const name_json = try jsonString(allocator, upstream.name);
+        defer allocator.free(name_json);
+        const url_json = try jsonString(allocator, upstream.url);
+        defer allocator.free(url_json);
+        const path_json = try jsonString(allocator, upstream.path);
+        defer allocator.free(path_json);
+        
+        var last_error_json: ?[]const u8 = null;
+        defer if (last_error_json) |value| allocator.free(value);
+        if (upstream.last_error) |msg| {
+            last_error_json = try jsonString(allocator, msg);
+        }
+        
+        try writer.print(
+            \\{{"name":{s},"url":{s},"path":{s},"healthy":{s},"last_success_ms":{s},"error_count":{d},"last_error":{s},"last_justified_slot":{s},"last_finalized_slot":{s}}}
+        , .{
+            name_json,
+            url_json,
+            path_json,
+            if (upstream.healthy) "true" else "false",
+            if (upstream.last_success_ms) |ms| blk: {
+                var num_buf: [32]u8 = undefined;
+                const num_str = try std.fmt.bufPrint(&num_buf, "{d}", .{ms});
+                break :blk num_str;
+            } else "null",
+            upstream.error_count,
+            last_error_json orelse "null",
+            if (upstream.last_justified_slot) |slot| blk: {
+                var num_buf: [32]u8 = undefined;
+                const num_str = try std.fmt.bufPrint(&num_buf, "{d}", .{slot});
+                break :blk num_str;
+            } else "null",
+            if (upstream.last_finalized_slot) |slot| blk: {
+                var num_buf: [32]u8 = undefined;
+                const num_str = try std.fmt.bufPrint(&num_buf, "{d}", .{slot});
+                break :blk num_str;
+            } else "null",
+        });
+    }
+    
+    // Write consensus info
+    try writer.print(
+        \\],"consensus":{{"total_upstreams":{d},"responding_upstreams":{d},"consensus_threshold":50,"has_consensus":{s}}}}}
+    , .{
+        upstreams_data.consensus.total_upstreams,
+        upstreams_data.consensus.responding_upstreams,
+        if (upstreams_data.consensus.has_consensus) "true" else "false",
+    });
+
+    try respondText(req, .ok, buffer.items, "application/json");
 }
 
 fn handleStatic(

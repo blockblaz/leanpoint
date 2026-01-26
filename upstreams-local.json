@@ -1,0 +1,24 @@
+{
+  "upstreams": [
+    {
+      "name": "zeam_0",
+      "url": "http://127.0.0.1:8081",
+      "path": "/v0/health"
+    },
+    {
+      "name": "zeam_1",
+      "url": "http://127.0.0.1:8082",
+      "path": "/v0/health"
+    },
+    {
+      "name": "zeam_2",
+      "url": "http://127.0.0.1:8083",
+      "path": "/v0/health"
+    },
+    {
+      "name": "zeam_3",
+      "url": "http://127.0.0.1:8084",
+      "path": "/v0/health"
+    }
+  ]
+}

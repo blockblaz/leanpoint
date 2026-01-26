@@ -1,4 +1,5 @@
 const std = @import("std");
+const upstreams_mod = @import("upstreams.zig");
 
 pub const Snapshot = struct {
     justified_slot: u64,
@@ -14,6 +15,43 @@ pub const Snapshot = struct {
     }
 };
 
+pub const UpstreamInfo = struct {
+    name: []u8,
+    url: []u8,
+    path: []u8,
+    healthy: bool,
+    last_success_ms: ?i64,
+    error_count: u64,
+    last_error: ?[]u8,
+    last_justified_slot: ?u64,
+    last_finalized_slot: ?u64,
+
+    pub fn deinit(self: *UpstreamInfo, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.url);
+        allocator.free(self.path);
+        if (self.last_error) |err| allocator.free(err);
+    }
+};
+
+pub const ConsensusInfo = struct {
+    total_upstreams: usize,
+    responding_upstreams: usize,
+    has_consensus: bool,
+};
+
+pub const UpstreamsData = struct {
+    upstreams: []UpstreamInfo,
+    consensus: ConsensusInfo,
+
+    pub fn deinit(self: *UpstreamsData, allocator: std.mem.Allocator) void {
+        for (self.upstreams) |*upstream| {
+            upstream.deinit(allocator);
+        }
+        allocator.free(self.upstreams);
+    }
+};
+
 pub const AppState = struct {
     mutex: std.Thread.Mutex = .{},
     justified_slot: u64 = 0,
@@ -23,6 +61,13 @@ pub const AppState = struct {
     last_latency_ms: u64 = 0,
     error_count: u64 = 0,
     last_error: ?[]u8 = null,
+    upstream_manager: ?*upstreams_mod.UpstreamManager = null,
+
+    pub fn init(upstream_manager: ?*upstreams_mod.UpstreamManager) AppState {
+        return AppState{
+            .upstream_manager = upstream_manager,
+        };
+    }
 
     pub fn deinit(self: *AppState, allocator: std.mem.Allocator) void {
         if (self.last_error) |msg| allocator.free(msg);
@@ -78,6 +123,61 @@ pub const AppState = struct {
             .error_count = self.error_count,
             .last_error = err_copy,
         };
+    }
+
+    pub fn getUpstreamsData(self: *AppState, allocator: std.mem.Allocator) !UpstreamsData {
+        if (self.upstream_manager) |manager| {
+            manager.mutex.lock();
+            defer manager.mutex.unlock();
+
+            var upstreams_info = try allocator.alloc(UpstreamInfo, manager.upstreams.items.len);
+            errdefer allocator.free(upstreams_info);
+
+            var responding: usize = 0;
+            for (manager.upstreams.items, 0..) |*upstream, i| {
+                const healthy = upstream.last_success_ms > 0 and upstream.last_slots != null;
+                if (healthy) responding += 1;
+
+                var last_error_copy: ?[]u8 = null;
+                if (upstream.last_error) |err| {
+                    last_error_copy = try allocator.dupe(u8, err);
+                }
+
+                upstreams_info[i] = UpstreamInfo{
+                    .name = try allocator.dupe(u8, upstream.name),
+                    .url = try allocator.dupe(u8, upstream.base_url),
+                    .path = try allocator.dupe(u8, upstream.path),
+                    .healthy = healthy,
+                    .last_success_ms = if (upstream.last_success_ms > 0) upstream.last_success_ms else null,
+                    .error_count = upstream.error_count,
+                    .last_error = last_error_copy,
+                    .last_justified_slot = if (upstream.last_slots) |slots| slots.justified_slot else null,
+                    .last_finalized_slot = if (upstream.last_slots) |slots| slots.finalized_slot else null,
+                };
+            }
+
+            const total = manager.upstreams.items.len;
+            const has_consensus = responding > 0 and (responding * 100 / total) > 50;
+
+            return UpstreamsData{
+                .upstreams = upstreams_info,
+                .consensus = ConsensusInfo{
+                    .total_upstreams = total,
+                    .responding_upstreams = responding,
+                    .has_consensus = has_consensus,
+                },
+            };
+        } else {
+            // No upstream manager (single upstream mode)
+            return UpstreamsData{
+                .upstreams = try allocator.alloc(UpstreamInfo, 0),
+                .consensus = ConsensusInfo{
+                    .total_upstreams = 0,
+                    .responding_upstreams = 0,
+                    .has_consensus = false,
+                },
+            };
+        }
     }
 };
 

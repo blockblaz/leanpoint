@@ -14,7 +14,7 @@ pub fn main() !void {
     var config = try config_mod.load(allocator);
     defer config.deinit(allocator);
 
-    var state = state_mod.AppState{};
+    var state: state_mod.AppState = undefined;
     defer state.deinit(allocator);
 
     // Check if multi-upstream mode is enabled
@@ -25,6 +25,8 @@ pub fn main() !void {
             return err;
         };
         defer upstreams.deinit();
+        
+        state = state_mod.AppState.init(&upstreams);
 
         std.debug.print("Loaded {d} upstreams\n", .{upstreams.upstreams.items.len});
         const poller_thread = try std.Thread.spawn(.{}, pollLoopMulti, .{ allocator, &config, &state, &upstreams });
@@ -33,6 +35,8 @@ pub fn main() !void {
         try server.serve(allocator, &config, &state);
     } else {
         // Legacy single upstream mode
+        state = state_mod.AppState.init(null);
+        
         const poller_thread = try std.Thread.spawn(.{}, pollLoop, .{ allocator, &config, &state });
         defer poller_thread.detach();
 

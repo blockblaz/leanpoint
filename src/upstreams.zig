@@ -34,6 +34,7 @@ pub const Upstream = struct {
 pub const UpstreamManager = struct {
     upstreams: std.ArrayList(Upstream),
     allocator: std.mem.Allocator,
+    mutex: std.Thread.Mutex = .{},
 
     pub fn init(allocator: std.mem.Allocator) UpstreamManager {
         return UpstreamManager{
