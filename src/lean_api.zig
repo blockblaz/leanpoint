@@ -59,10 +59,13 @@ fn fetchSlotFromSSZEndpoint(
     // Parse URI
     const uri = try std.Uri.parse(url);
 
-    // Make request
+    // Make request with Accept: application/octet-stream header
     var header_buf: [4096]u8 = undefined;
     var req = try client.open(.GET, uri, .{
         .server_header_buffer = &header_buf,
+        .extra_headers = &.{
+            .{ .name = "accept", .value = "application/octet-stream" },
+        },
     });
     defer req.deinit();
 
@@ -72,10 +75,11 @@ fn fetchSlotFromSSZEndpoint(
 
     // Check status
     if (req.response.status != .ok) {
+        std.debug.print("Bad status from {s}: {any}\n", .{ url, req.response.status });
         return error.BadStatus;
     }
 
-    // Read response body (SSZ binary data)
+    // Read response body
     var body_buf = std.ArrayList(u8).init(allocator);
     defer body_buf.deinit();
 
@@ -86,12 +90,61 @@ fn fetchSlotFromSSZEndpoint(
 
     // Validate we have enough bytes to read the slot
     if (body.len < 16) {
+        std.debug.print("ERROR: Response too short for SSZ state (need 16 bytes, got {d}) from {s}\n", .{ body.len, url });
         return error.InvalidSSZData;
+    }
+
+    // Check if response looks like text/JSON/metrics instead of binary SSZ
+    // SSZ binary data should have non-printable bytes in the first 64 bytes
+    var text_byte_count: usize = 0;
+    const check_len = @min(body.len, 64);
+    for (body[0..check_len]) |byte| {
+        // Count printable ASCII characters
+        if ((byte >= 32 and byte <= 126) or byte == '\n' or byte == '\r' or byte == '\t') {
+            text_byte_count += 1;
+        }
+    }
+
+    // If more than 90% of bytes are printable text, it's probably not SSZ
+    if (text_byte_count * 100 / check_len > 90) {
+        const preview = body[0..@min(body.len, 100)];
+        std.debug.print("ERROR: Response from {s} appears to be text, not SSZ binary:\n", .{url});
+        std.debug.print("  First 100 bytes: {s}\n", .{preview});
+        return error.UnexpectedTextResponse;
     }
 
     // Extract slot from bytes 8-15 (little-endian u64)
     // This is the second field in LeanState after config.genesis_time
+    const genesis_time = std.mem.readInt(u64, body[0..8], .little);
     const slot = std.mem.readInt(u64, body[8..16], .little);
+
+    // Validate slot is reasonable (not astronomically large due to misinterpreting text as binary)
+    // A reasonable upper bound: 1 billion slots (would take ~300 years at 12s per slot)
+    const max_reasonable_slot: u64 = 1_000_000_000;
+    if (slot > max_reasonable_slot) {
+        // This is likely text being interpreted as a number
+        const bytes_as_text = body[8..16];
+        var is_ascii = true;
+        for (bytes_as_text) |byte| {
+            if (byte < 32 or byte > 126) {
+                is_ascii = false;
+                break;
+            }
+        }
+        if (is_ascii) {
+            std.debug.print("ERROR: Invalid slot value {d} from {s}\n", .{ slot, url });
+            std.debug.print("  Bytes 8-15 as ASCII: '{s}'\n", .{bytes_as_text});
+            std.debug.print("  This suggests the response is text/metrics, not SSZ binary\n", .{});
+            return error.InvalidSlotValue;
+        }
+    }
+
+    // Validate genesis time is reasonable (Unix timestamp between 2020 and 2050)
+    const min_genesis: u64 = 1577836800; // 2020-01-01
+    const max_genesis: u64 = 2524608000; // 2050-01-01
+    if (genesis_time < min_genesis or genesis_time > max_genesis) {
+        std.debug.print("WARNING: Unusual genesis_time {d} from {s} (expected Unix timestamp)\n", .{ genesis_time, url });
+    }
 
     return slot;
 }
