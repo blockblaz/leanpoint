@@ -1,5 +1,6 @@
 const std = @import("std");
 const lean_api = @import("lean_api.zig");
+const log = @import("log.zig");
 
 pub const Upstream = struct {
     name: []const u8,
@@ -90,11 +91,16 @@ pub const UpstreamManager = struct {
     }
 
     /// Poll all upstreams and return consensus slots if 50%+ agree
+    /// Thread-safe: acquires mutex during upstream state updates
     pub fn pollUpstreams(
         self: *UpstreamManager,
         client: *std.http.Client,
         now_ms: i64,
     ) ?lean_api.Slots {
+        // Lock for the entire polling operation to ensure consistency
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         if (self.upstreams.items.len == 0) return null;
 
         var slot_counts = std.AutoHashMap(u128, u32).init(self.allocator);
@@ -111,12 +117,23 @@ pub const UpstreamManager = struct {
                 upstream.path,
             ) catch |err| {
                 upstream.error_count += 1;
-                if (upstream.last_error) |old_err| self.allocator.free(old_err);
+
+                // Free old error first to prevent leak
+                if (upstream.last_error) |old_err| {
+                    self.allocator.free(old_err);
+                }
+
+                // Allocate new error message with fallback
                 upstream.last_error = std.fmt.allocPrint(
                     self.allocator,
-                    "{s} ({s})",
-                    .{ @errorName(err), upstream.base_url },
-                ) catch null;
+                    "{s}",
+                    .{@errorName(err)},
+                ) catch blk: {
+                    // Fallback: try to duplicate a static string
+                    break :blk self.allocator.dupe(u8, "allocation_failed") catch null;
+                };
+
+                log.warn("Upstream {s} ({s}) failed: {s}", .{ upstream.name, upstream.base_url, @errorName(err) });
                 continue;
             };
 
@@ -130,6 +147,8 @@ pub const UpstreamManager = struct {
             upstream.last_slots = slots;
             upstream.last_success_ms = now_ms;
 
+            log.debug("Upstream {s}: justified={d}, finalized={d}", .{ upstream.name, slots.justified_slot, slots.finalized_slot });
+
             // Create a unique key for this slot combination
             const slot_key: u128 = (@as(u128, slots.justified_slot) << 64) | @as(u128, slots.finalized_slot);
             const count = slot_counts.get(slot_key) orelse 0;
@@ -138,7 +157,10 @@ pub const UpstreamManager = struct {
             successful_polls += 1;
         }
 
-        if (successful_polls == 0) return null;
+        if (successful_polls == 0) {
+            log.warn("No upstreams responded successfully", .{});
+            return null;
+        }
 
         // Find consensus (50%+ agreement)
         const required_votes = (successful_polls + 1) / 2; // Ceiling division
@@ -147,13 +169,21 @@ pub const UpstreamManager = struct {
         while (iter.next()) |entry| {
             if (entry.value_ptr.* >= required_votes) {
                 const slot_key = entry.key_ptr.*;
-                return lean_api.Slots{
+                const result = lean_api.Slots{
                     .justified_slot = @truncate(slot_key >> 64),
                     .finalized_slot = @truncate(slot_key & 0xFFFFFFFFFFFFFFFF),
                 };
+                log.info("Consensus reached: justified={d}, finalized={d} ({d}/{d} upstreams)", .{
+                    result.justified_slot,
+                    result.finalized_slot,
+                    entry.value_ptr.*,
+                    successful_polls,
+                });
+                return result;
             }
         }
 
+        log.warn("No consensus reached among {d} responding upstreams", .{successful_polls});
         return null; // No consensus reached
     }
 };
