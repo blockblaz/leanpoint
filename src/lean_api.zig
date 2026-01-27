@@ -61,11 +61,13 @@ fn fetchSlotFromSSZEndpoint(
     const uri = try std.Uri.parse(url);
 
     // Make request with Accept: application/octet-stream header
+    // Force connection closure to prevent stale connection reuse (EndOfStream errors)
     var header_buf: [4096]u8 = undefined;
     var req = try client.open(.GET, uri, .{
         .server_header_buffer = &header_buf,
         .extra_headers = &.{
             .{ .name = "accept", .value = "application/octet-stream" },
+            .{ .name = "connection", .value = "close" },
         },
     });
     defer req.deinit();
