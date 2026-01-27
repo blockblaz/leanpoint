@@ -213,7 +213,7 @@ pub const UpstreamManager = struct {
                         self.allocator.free(old_err);
                     }
                     upstream.last_error = result.error_msg;
-                    
+
                     // Mark as transferred to prevent double-free in defer
                     results.items[i].error_msg = null;
                 }
