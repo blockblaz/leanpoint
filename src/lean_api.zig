@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log.zig");
 
 pub const Slots = struct {
     justified_slot: u64,
@@ -75,7 +76,7 @@ fn fetchSlotFromSSZEndpoint(
 
     // Check status
     if (req.response.status != .ok) {
-        std.debug.print("Bad status from {s}: {any}\n", .{ url, req.response.status });
+        log.warn("Bad status from {s}: {any}", .{ url, req.response.status });
         return error.BadStatus;
     }
 
@@ -83,14 +84,21 @@ fn fetchSlotFromSSZEndpoint(
     var body_buf = std.ArrayList(u8).init(allocator);
     defer body_buf.deinit();
 
-    const max_bytes = 10 * 1024 * 1024; // 10 MB limit for state data
+    // Optimize buffer size based on endpoint
+    // Finalized/justified states are typically 1-2MB in SSZ format
+    // Other endpoints (health, metrics) are much smaller
+    const max_bytes: usize = if (std.mem.indexOf(u8, path, "states") != null)
+        2 * 1024 * 1024 // 2MB for state endpoints
+    else
+        64 * 1024; // 64KB for other endpoints
+
     try req.reader().readAllArrayList(&body_buf, max_bytes);
 
     const body = body_buf.items;
 
     // Validate we have enough bytes to read the slot
     if (body.len < 16) {
-        std.debug.print("ERROR: Response too short for SSZ state (need 16 bytes, got {d}) from {s}\n", .{ body.len, url });
+        log.err("Response too short for SSZ state (need 16 bytes, got {d}) from {s}", .{ body.len, url });
         return error.InvalidSSZData;
     }
 
@@ -108,8 +116,7 @@ fn fetchSlotFromSSZEndpoint(
     // If more than 90% of bytes are printable text, it's probably not SSZ
     if (text_byte_count * 100 / check_len > 90) {
         const preview = body[0..@min(body.len, 100)];
-        std.debug.print("ERROR: Response from {s} appears to be text, not SSZ binary:\n", .{url});
-        std.debug.print("  First 100 bytes: {s}\n", .{preview});
+        log.err("Response from {s} appears to be text, not SSZ binary. First 100 bytes: {s}", .{ url, preview });
         return error.UnexpectedTextResponse;
     }
 
@@ -132,9 +139,7 @@ fn fetchSlotFromSSZEndpoint(
             }
         }
         if (is_ascii) {
-            std.debug.print("ERROR: Invalid slot value {d} from {s}\n", .{ slot, url });
-            std.debug.print("  Bytes 8-15 as ASCII: '{s}'\n", .{bytes_as_text});
-            std.debug.print("  This suggests the response is text/metrics, not SSZ binary\n", .{});
+            log.err("Invalid slot value {d} from {s}. Bytes 8-15 as ASCII: '{s}'. This suggests text/metrics response instead of SSZ", .{ slot, url, bytes_as_text });
             return error.InvalidSlotValue;
         }
     }
@@ -143,8 +148,10 @@ fn fetchSlotFromSSZEndpoint(
     const min_genesis: u64 = 1577836800; // 2020-01-01
     const max_genesis: u64 = 2524608000; // 2050-01-01
     if (genesis_time < min_genesis or genesis_time > max_genesis) {
-        std.debug.print("WARNING: Unusual genesis_time {d} from {s} (expected Unix timestamp)\n", .{ genesis_time, url });
+        log.warn("Unusual genesis_time {d} from {s} (expected Unix timestamp between 2020-2050)", .{ genesis_time, url });
     }
+
+    log.debug("Successfully fetched slot {d} from {s}", .{ slot, url });
 
     return slot;
 }

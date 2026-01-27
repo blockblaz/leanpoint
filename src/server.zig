@@ -1,5 +1,6 @@
 const std = @import("std");
 const config_mod = @import("config.zig");
+const log = @import("log.zig");
 const state_mod = @import("state.zig");
 const metrics_mod = @import("metrics.zig");
 
@@ -11,7 +12,7 @@ pub fn serve(
     const address = try std.net.Address.parseIp4(config.bind_address, config.bind_port);
     var net_server = try address.listen(.{ .reuse_address = true });
     defer net_server.deinit();
-    std.debug.print("Listening on {s}:{d}\n", .{ config.bind_address, config.bind_port });
+    log.info("Listening on {s}:{d}", .{ config.bind_address, config.bind_port });
 
     while (true) {
         var conn = try net_server.accept();
@@ -39,12 +40,16 @@ fn handleRequest(
     state: *state_mod.AppState,
     req: *std.http.Server.Request,
 ) !void {
-    if (req.head.method != .GET) {
+    const method = req.head.method;
+    const target = req.head.target;
+
+    log.debug("{s} {s}", .{ @tagName(method), target });
+
+    if (method != .GET and method != .HEAD) {
         try respondText(req, .method_not_allowed, "Method not allowed\n", "text/plain");
         return;
     }
 
-    const target = req.head.target;
     const path = splitPath(target);
 
     if (std.mem.eql(u8, path, "/status")) {
@@ -128,6 +133,31 @@ fn handleHealthz(
     state: *state_mod.AppState,
     req: *std.http.Server.Request,
 ) !void {
+    // Check if we're in multi-upstream mode
+    var upstreams_data = try state.getUpstreamsData(allocator);
+    defer upstreams_data.deinit(allocator);
+
+    // If in multi-upstream mode, check consensus first
+    if (upstreams_data.consensus.total_upstreams > 0) {
+        // Require at least one upstream responding
+        if (upstreams_data.consensus.responding_upstreams == 0) {
+            log.warn("Health check failed: no upstreams responding", .{});
+            try respondText(req, .service_unavailable, "no_upstreams\n", "text/plain");
+            return;
+        }
+
+        // Require consensus (50%+ agreement)
+        if (!upstreams_data.consensus.has_consensus) {
+            log.warn("Health check failed: no consensus ({d}/{d} upstreams responding)", .{
+                upstreams_data.consensus.responding_upstreams,
+                upstreams_data.consensus.total_upstreams,
+            });
+            try respondText(req, .service_unavailable, "no_consensus\n", "text/plain");
+            return;
+        }
+    }
+
+    // Check if data is stale (for both single and multi-upstream modes)
     var snapshot = try state.snapshot(allocator);
     defer snapshot.deinit(allocator);
 
@@ -136,6 +166,7 @@ fn handleHealthz(
         (now_ms - snapshot.last_success_ms) > @as(i64, @intCast(config.stale_after_ms));
 
     if (stale) {
+        log.warn("Health check failed: stale data (last success: {d}ms ago)", .{now_ms - snapshot.last_success_ms});
         try respondText(req, .service_unavailable, "stale\n", "text/plain");
     } else {
         try respondText(req, .ok, "ok\n", "text/plain");
