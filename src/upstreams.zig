@@ -103,6 +103,7 @@ pub const UpstreamManager = struct {
         index: usize,
         slots: ?lean_api.Slots,
         error_msg: ?[]const u8,
+        state_ssz: ?[]u8,
     };
 
     /// Poll all upstreams and return consensus slots if 50%+ agree
@@ -111,6 +112,7 @@ pub const UpstreamManager = struct {
         self: *UpstreamManager,
         client: *std.http.Client,
         now_ms: i64,
+        out_state_ssz: ?*[]u8,
     ) ?lean_api.Slots {
         // Step 1: Create snapshot of upstreams to poll (without holding lock)
         var targets = std.ArrayList(PollTarget).init(self.allocator);
@@ -137,20 +139,24 @@ pub const UpstreamManager = struct {
         // Step 2: Poll all upstreams WITHOUT holding the lock (I/O can be slow!)
         var results = std.ArrayList(PollResult).init(self.allocator);
         defer {
-            // Clean up any error messages that weren't transferred to upstreams
+            // Clean up any error messages or SSZ blobs that weren't transferred
             for (results.items) |result| {
                 if (result.error_msg) |msg| self.allocator.free(msg);
+                if (result.state_ssz) |blob| self.allocator.free(blob);
             }
             results.deinit();
         }
 
         for (targets.items) |target| {
+            var state_ssz: ?[]u8 = null;
             const slots = lean_api.fetchSlots(
                 self.allocator,
                 client,
                 target.base_url,
                 target.path,
+                &state_ssz,
             ) catch |err| {
+                if (state_ssz) |blob| self.allocator.free(blob);
                 const error_msg = std.fmt.allocPrint(
                     self.allocator,
                     "{s}",
@@ -163,6 +169,7 @@ pub const UpstreamManager = struct {
                     .index = target.index,
                     .slots = null,
                     .error_msg = error_msg,
+                    .state_ssz = null,
                 }) catch continue;
                 continue;
             };
@@ -173,6 +180,7 @@ pub const UpstreamManager = struct {
                 .index = target.index,
                 .slots = slots,
                 .error_msg = null,
+                .state_ssz = state_ssz,
             }) catch continue;
         }
 
@@ -232,9 +240,28 @@ pub const UpstreamManager = struct {
         while (iter.next()) |entry| {
             if (entry.value_ptr.* >= required_votes) {
                 const slot_key = entry.key_ptr.*;
+                const justified_slot: u64 = @truncate(slot_key >> 64);
+                const finalized_slot: u64 = @truncate(slot_key & 0xFFFFFFFFFFFFFFFF);
+
+                // If caller requested SSZ, find a matching upstream result and transfer ownership.
+                if (out_state_ssz) |out| {
+                    for (results.items, 0..) |*res, i| {
+                        if (res.slots) |s| {
+                            if (s.justified_slot == justified_slot and s.finalized_slot == finalized_slot) {
+                                if (res.state_ssz) |blob| {
+                                    out.* = blob;
+                                    // Prevent defer block from freeing it.
+                                    results.items[i].state_ssz = null;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 const result = lean_api.Slots{
-                    .justified_slot = @truncate(slot_key >> 64),
-                    .finalized_slot = @truncate(slot_key & 0xFFFFFFFFFFFFFFFF),
+                    .justified_slot = justified_slot,
+                    .finalized_slot = finalized_slot,
                 };
                 log.info("Consensus reached: justified={d}, finalized={d} ({d}/{d} upstreams)", .{
                     result.justified_slot,

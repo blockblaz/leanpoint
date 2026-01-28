@@ -61,6 +61,7 @@ pub const AppState = struct {
     last_latency_ms: u64 = 0,
     error_count: u64 = 0,
     last_error: ?[]u8 = null,
+    last_finalized_state_ssz: ?[]u8 = null,
     upstream_manager: ?*upstreams_mod.UpstreamManager = null,
 
     pub fn init(upstream_manager: ?*upstreams_mod.UpstreamManager) AppState {
@@ -72,6 +73,8 @@ pub const AppState = struct {
     pub fn deinit(self: *AppState, allocator: std.mem.Allocator) void {
         if (self.last_error) |msg| allocator.free(msg);
         self.last_error = null;
+        if (self.last_finalized_state_ssz) |state_ssz| allocator.free(state_ssz);
+        self.last_finalized_state_ssz = null;
     }
 
     pub fn updateSuccess(
@@ -81,6 +84,7 @@ pub const AppState = struct {
         finalized_slot: u64,
         latency_ms: u64,
         now_ms: i64,
+        state_ssz: ?[]const u8,
     ) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -91,6 +95,13 @@ pub const AppState = struct {
         self.last_latency_ms = latency_ms;
         if (self.last_error) |msg| allocator.free(msg);
         self.last_error = null;
+
+        if (state_ssz) |bytes| {
+            if (self.last_finalized_state_ssz) |old_state| {
+                allocator.free(old_state);
+            }
+            self.last_finalized_state_ssz = allocator.dupe(u8, bytes) catch self.last_finalized_state_ssz;
+        }
     }
 
     pub fn updateError(
@@ -123,6 +134,19 @@ pub const AppState = struct {
             .error_count = self.error_count,
             .last_error = err_copy,
         };
+    }
+
+    /// Returns a freshly allocated copy of the last finalized state SSZ, if any.
+    /// Caller is responsible for freeing the returned slice.
+    pub fn copyFinalizedStateSSZ(self: *AppState, allocator: std.mem.Allocator) !?[]u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (self.last_finalized_state_ssz) |state_ssz| {
+            const copy = try allocator.dupe(u8, state_ssz);
+            return copy;
+        }
+        return null;
     }
 
     pub fn getUpstreamsData(self: *AppState, allocator: std.mem.Allocator) !UpstreamsData {
@@ -185,7 +209,7 @@ test "AppState updateSuccess" {
     var state = AppState{};
     defer state.deinit(std.testing.allocator);
 
-    state.updateSuccess(std.testing.allocator, 100, 99, 50, 1000);
+    state.updateSuccess(std.testing.allocator, 100, 99, 50, 1000, null);
 
     try std.testing.expectEqual(@as(u64, 100), state.justified_slot);
     try std.testing.expectEqual(@as(u64, 99), state.finalized_slot);
@@ -214,7 +238,7 @@ test "AppState snapshot" {
     var state = AppState{};
     defer state.deinit(std.testing.allocator);
 
-    state.updateSuccess(std.testing.allocator, 200, 199, 75, 3000);
+    state.updateSuccess(std.testing.allocator, 200, 199, 75, 3000, null);
 
     var snapshot = try state.snapshot(std.testing.allocator);
     defer snapshot.deinit(std.testing.allocator);
@@ -246,7 +270,7 @@ test "AppState updateSuccess clears error" {
     state.updateError(std.testing.allocator, "error message", 1000);
     try std.testing.expectEqual(@as(u64, 1), state.error_count);
 
-    state.updateSuccess(std.testing.allocator, 100, 99, 50, 2000);
+    state.updateSuccess(std.testing.allocator, 100, 99, 50, 2000, null);
     try std.testing.expect(state.last_error == null);
     try std.testing.expectEqual(@as(u64, 1), state.error_count); // error_count persists
 }
