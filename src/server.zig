@@ -68,6 +68,10 @@ fn handleRequest(
         try handleApiUpstreams(allocator, config, state, req);
         return;
     }
+    if (std.mem.eql(u8, path, "/lean/v0/states/finalized")) {
+        try handleFinalizedState(allocator, config, state, req);
+        return;
+    }
 
     if (config.static_dir) |static_dir| {
         if (try handleStatic(allocator, static_dir, path, req)) return;
@@ -112,6 +116,51 @@ fn handleStatus(
     });
 
     try respondText(req, .ok, buffer.items, "application/json");
+}
+
+fn handleFinalizedState(
+    allocator: std.mem.Allocator,
+    config: *const config_mod.Config,
+    state: *state_mod.AppState,
+    req: *std.http.Server.Request,
+) !void {
+    var snapshot = try state.snapshot(allocator);
+    defer snapshot.deinit(allocator);
+
+    const now_ms = std.time.milliTimestamp();
+    const stale = snapshot.last_success_ms == 0 or
+        (now_ms - snapshot.last_success_ms) > @as(i64, @intCast(config.stale_after_ms));
+
+    if (stale) {
+        log.warn("Finalized state request failed: stale data (last success: {d}ms ago)", .{
+            if (snapshot.last_success_ms == 0) now_ms else now_ms - snapshot.last_success_ms,
+        });
+        try respondText(req, .service_unavailable, "stale\n", "text/plain");
+        return;
+    }
+
+    // Get a copy of the last finalized state SSZ blob.
+    const state_ssz_opt = try state.copyFinalizedStateSSZ(allocator);
+    if (state_ssz_opt == null) {
+        log.warn("Finalized state request failed: no finalized state SSZ cached", .{});
+        try respondText(req, .service_unavailable, "no_finalized_state\n", "text/plain");
+        return;
+    }
+
+    const state_ssz = state_ssz_opt.?;
+    defer allocator.free(state_ssz);
+
+    var content_length_buf: [32]u8 = undefined;
+    const content_length_str = try std.fmt.bufPrint(&content_length_buf, "{d}", .{state_ssz.len});
+
+    const headers = [_]std.http.Header{
+        .{ .name = "content-type", .value = "application/octet-stream" },
+        .{ .name = "content-length", .value = content_length_str },
+    };
+    try req.respond(state_ssz, .{
+        .status = .ok,
+        .extra_headers = &headers,
+    });
 }
 
 fn handleMetrics(

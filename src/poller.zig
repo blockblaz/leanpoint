@@ -72,11 +72,13 @@ pub const Poller = struct {
 
     /// Poll single upstream (legacy mode)
     fn pollSingle(self: *Poller, now_ms: i64) !void {
+        var state_ssz: ?[]u8 = null;
         const slots = lean_api.fetchSlots(
             self.allocator,
             &self.client,
             self.config.lean_api_base_url,
             self.config.lean_api_path,
+            &state_ssz,
         ) catch |err| {
             var msg_buf = std.ArrayList(u8).init(self.allocator);
             defer msg_buf.deinit();
@@ -92,13 +94,19 @@ pub const Poller = struct {
             slots.finalized_slot,
             latency_ms,
             now_ms,
+            state_ssz,
         );
+
+        if (state_ssz) |blob| {
+            self.allocator.free(blob);
+        }
     }
 
     /// Poll multiple upstreams with consensus
     fn pollMulti(self: *Poller, manager: *upstreams_mod.UpstreamManager, now_ms: i64) !void {
         // Poll all upstreams and get consensus
-        const consensus_slots = manager.pollUpstreams(&self.client, now_ms);
+        var state_ssz: ?[]u8 = null;
+        const consensus_slots = manager.pollUpstreams(&self.client, now_ms, &state_ssz);
 
         if (consensus_slots) |slots| {
             const latency_ms: u64 = 0; // Latency not tracked in multi-upstream mode
@@ -108,7 +116,11 @@ pub const Poller = struct {
                 slots.finalized_slot,
                 latency_ms,
                 now_ms,
+                state_ssz,
             );
+            if (state_ssz) |blob| {
+                self.allocator.free(blob);
+            }
         } else {
             const error_msg = manager.getErrorSummary(self.allocator) catch "failed to get error summary";
             defer self.allocator.free(error_msg);

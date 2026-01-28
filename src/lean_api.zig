@@ -13,6 +13,7 @@ pub fn fetchSlots(
     client: *std.http.Client,
     base_url: []const u8,
     _: []const u8, // path parameter not used anymore
+    out_state_ssz: *?[]u8,
 ) !Slots {
     // Fetch finalized slot from SSZ-encoded endpoint
     const finalized_slot = try fetchSlotFromSSZEndpoint(
@@ -20,6 +21,7 @@ pub fn fetchSlots(
         client,
         base_url,
         "/lean/v0/states/finalized",
+        out_state_ssz,
     );
 
     // For now, use finalized slot as justified slot since /lean/v0/states/justified returns 404
@@ -52,6 +54,7 @@ fn fetchSlotFromSSZEndpoint(
     client: *std.http.Client,
     base_url: []const u8,
     path: []const u8,
+    out_state_ssz: *?[]u8,
 ) !u64 {
     // Build full URL
     var url_buf: [512]u8 = undefined;
@@ -84,7 +87,7 @@ fn fetchSlotFromSSZEndpoint(
 
     // Read response body
     var body_buf = std.ArrayList(u8).init(allocator);
-    defer body_buf.deinit();
+    errdefer body_buf.deinit();
 
     // Optimize buffer size based on endpoint
     // Finalized/justified states are typically 1-2MB in SSZ format
@@ -154,6 +157,9 @@ fn fetchSlotFromSSZEndpoint(
     }
 
     log.debug("Successfully fetched slot {d} from {s}", .{ slot, url });
+
+    // Transfer ownership of the full SSZ payload to the caller.
+    out_state_ssz.* = try body_buf.toOwnedSlice();
 
     return slot;
 }
