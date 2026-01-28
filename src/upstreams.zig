@@ -112,7 +112,7 @@ pub const UpstreamManager = struct {
         self: *UpstreamManager,
         client: *std.http.Client,
         now_ms: i64,
-        out_state_ssz: ?*[]u8,
+        out_state_ssz: *?[]u8,
     ) ?lean_api.Slots {
         // Step 1: Create snapshot of upstreams to poll (without holding lock)
         var targets = std.ArrayList(PollTarget).init(self.allocator);
@@ -243,17 +243,15 @@ pub const UpstreamManager = struct {
                 const justified_slot: u64 = @truncate(slot_key >> 64);
                 const finalized_slot: u64 = @truncate(slot_key & 0xFFFFFFFFFFFFFFFF);
 
-                // If caller requested SSZ, find a matching upstream result and transfer ownership.
-                if (out_state_ssz) |out| {
-                    for (results.items, 0..) |*res, i| {
-                        if (res.slots) |s| {
-                            if (s.justified_slot == justified_slot and s.finalized_slot == finalized_slot) {
-                                if (res.state_ssz) |blob| {
-                                    out.* = blob;
-                                    // Prevent defer block from freeing it.
-                                    results.items[i].state_ssz = null;
-                                    break;
-                                }
+                // Find a matching upstream result and transfer SSZ ownership to caller.
+                for (results.items, 0..) |*res, i| {
+                    if (res.slots) |s| {
+                        if (s.justified_slot == justified_slot and s.finalized_slot == finalized_slot) {
+                            if (res.state_ssz) |blob| {
+                                out_state_ssz.* = blob;
+                                // Prevent defer block from freeing it.
+                                results.items[i].state_ssz = null;
+                                break;
                             }
                         }
                     }

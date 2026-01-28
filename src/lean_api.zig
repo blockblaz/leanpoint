@@ -13,7 +13,7 @@ pub fn fetchSlots(
     client: *std.http.Client,
     base_url: []const u8,
     _: []const u8, // path parameter not used anymore
-    out_state_ssz: ?*[]u8,
+    out_state_ssz: *?[]u8,
 ) !Slots {
     // Fetch finalized slot from SSZ-encoded endpoint
     const finalized_slot = try fetchSlotFromSSZEndpoint(
@@ -54,7 +54,7 @@ fn fetchSlotFromSSZEndpoint(
     client: *std.http.Client,
     base_url: []const u8,
     path: []const u8,
-    out_state_ssz: ?*[]u8,
+    out_state_ssz: *?[]u8,
 ) !u64 {
     // Build full URL
     var url_buf: [512]u8 = undefined;
@@ -158,12 +158,8 @@ fn fetchSlotFromSSZEndpoint(
 
     log.debug("Successfully fetched slot {d} from {s}", .{ slot, url });
 
-    // If caller wants the full SSZ payload, transfer ownership.
-    if (out_state_ssz) |out| {
-        out.* = try body_buf.toOwnedSlice();
-    } else {
-        body_buf.deinit();
-    }
+    // Transfer ownership of the full SSZ payload to the caller.
+    out_state_ssz.* = try body_buf.toOwnedSlice();
 
     return slot;
 }
