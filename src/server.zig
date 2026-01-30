@@ -14,23 +14,23 @@ pub fn serve(
     defer net_server.deinit();
     log.info("Listening on {s}:{d}", .{ config.bind_address, config.bind_port });
 
+    // One request per connection to avoid Zig std.http.Server discardBody()
+    // unreachable when reusing the same connection (state machine bug).
     while (true) {
         var conn = try net_server.accept();
         defer conn.stream.close();
         var read_buffer: [16 * 1024]u8 = undefined;
         var http_server = std.http.Server.init(conn, &read_buffer);
 
-        while (true) {
-            var req = http_server.receiveHead() catch |err| switch (err) {
-                error.HttpConnectionClosing => break,
-                error.HttpRequestTruncated,
-                error.HttpHeadersOversize,
-                error.HttpHeadersInvalid,
-                error.HttpHeadersUnreadable,
-                => break,
-            };
-            try handleRequest(allocator, config, state, &req);
-        }
+        var req = http_server.receiveHead() catch |err| switch (err) {
+            error.HttpConnectionClosing => continue,
+            error.HttpRequestTruncated,
+            error.HttpHeadersOversize,
+            error.HttpHeadersInvalid,
+            error.HttpHeadersUnreadable,
+            => continue,
+        };
+        handleRequest(allocator, config, state, &req) catch continue;
     }
 }
 
@@ -159,6 +159,8 @@ fn handleFinalizedState(
     };
     try req.respond(state_ssz, .{
         .status = .ok,
+        .keep_alive = false,
+        .transfer_encoding = .none,
         .extra_headers = &headers,
     });
 }
@@ -342,6 +344,8 @@ fn splitPath(target: []const u8) []const u8 {
     return iter.next() orelse target;
 }
 
+/// Respond with a text/JSON body. Uses keep_alive = false and transfer_encoding = .none
+/// to avoid Zig std.http.Server discardBody() unreachable when reusing connections.
 fn respondText(
     req: *std.http.Server.Request,
     status: std.http.Status,
@@ -353,6 +357,8 @@ fn respondText(
     };
     try req.respond(body, .{
         .status = status,
+        .keep_alive = false,
+        .transfer_encoding = .none,
         .extra_headers = &headers,
     });
 }
